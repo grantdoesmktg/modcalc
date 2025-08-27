@@ -47,6 +47,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PredictResult | null>(null);
 
+  // NEW: error + limit state for 429 handling
+  const [error, setError] = useState<string | null>(null);
+  const [hitLimit, setHitLimit] = useState(false);
+
   const [myBuilds, setMyBuilds] = useState<any[]>([]);
   const car = useMemo(() => cars.find((c) => c.id === carId) || null, [cars, carId]);
 
@@ -99,23 +103,41 @@ export default function Home() {
     const key = `pred-count-${new Date().toISOString().slice(0, 10)}`;
     const used = Number(localStorage.getItem(key) || 0);
     if (!session && used >= DAILY_FREE) {
-      alert('Free limit reached for today. Sign in to save builds + get more runs.');
+      setError('Daily limit reached for Free. Sign in or upgrade for more runs.');
+      setHitLimit(true);
       return;
     }
 
     setLoading(true);
     setResult(null);
+    setError(null);
 
-    const r = await fetch('/api/predict', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ carId, modIds: selected }),
-    }).then((res) => res.json());
+    try {
+      const res = await fetch('/api/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ carId, modIds: selected })
+      });
 
-    setResult(r);
-    setLoading(false);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 429) {
+          setError(err.error || 'Daily limit reached. Upgrade for more runs.');
+          setHitLimit(true);
+          return;
+        }
+        throw new Error(err.error || `Request failed (${res.status})`);
+      }
 
-    if (!session) localStorage.setItem(key, String(used + 1));
+      const data: PredictResult = await res.json();
+      setResult(data);
+
+      if (!session) localStorage.setItem(key, String(used + 1));
+    } catch (e: any) {
+      setError(e?.message || 'Something went wrong.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const onSave = async () => {
@@ -159,12 +181,12 @@ export default function Home() {
             onSubmit={async (e) => {
               e.preventDefault();
               const site = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
-const { error } = await supabase.auth.signInWithOtp({
-  email,
-  options: { emailRedirectTo: site }
-});
-if (error) alert(error.message);
-else alert('Check your email for the magic link!');
+              const { error } = await supabase.auth.signInWithOtp({
+                email,
+                options: { emailRedirectTo: site }
+              });
+              if (error) alert(error.message);
+              else alert('Check your email for the magic link!');
             }}
           >
             <input
@@ -179,6 +201,19 @@ else alert('Check your email for the magic link!');
           </form>
         )}
       </div>
+
+      {/* Upgrade wall / error banner */}
+      {error && (
+        <div className="mb-4 rounded border border-red-500 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+          {hitLimit && (
+            <div className="mt-2 flex items-center gap-2">
+              <a href="/upgrade" className="rounded bg-black px-3 py-1 text-white">Upgrade plan</a>
+              <a href="/" className="rounded border px-3 py-1">Refresh</a>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Choose Car */}
@@ -221,7 +256,9 @@ else alert('Check your email for the magic link!');
                 <input
                   type="checkbox"
                   checked={selected.includes(m.id)}
-                  onChange={() => toggleMod(m.id)}
+                  onChange={() => setSelected((prev) => (
+                    prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id]
+                  ))}
                 />
                 <span>
                   <span className="font-medium">{m.name}</span>
@@ -237,7 +274,7 @@ else alert('Check your email for the magic link!');
           </div>
           <button
             onClick={onPredict}
-            disabled={!carId || loading}
+            disabled={!carId || loading || hitLimit}
             className="mt-4 rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
           >
             {loading ? 'Calculating…' : 'Calculate Build'}
@@ -247,7 +284,7 @@ else alert('Check your email for the magic link!');
         {/* Results */}
         <section className="md:col-span-1">
           <h2 className="font-semibold mb-2">3) Results</h2>
-          {!result && <div className="text-sm text-slate-500">No result yet.</div>}
+          {!result && !error && <div className="text-sm text-slate-500">No result yet.</div>}
           {result && (
             <div className="rounded-xl border p-4 space-y-1 text-sm">
               <div>
