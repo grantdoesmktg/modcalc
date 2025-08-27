@@ -125,6 +125,201 @@ export default function Home() {
     }
   };
 
+  // ------------------ helper: load my builds ------------------
+  async function loadMyBuilds() {
+    if (!session) {
+      setMyBuilds([]);
+      return;
+    }
+    const { data } = await supabase
+      .from('builds')
+      .select('id, created_at, result, car_id, mod_ids')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    setMyBuilds(data || []);
+  }
+
+  // ------------------ UI actions ------------------
+  const onPredict = async () => {
+    if (!carId) return;
+
+    if (hasHitLimit) {
+      setError(`You've used all ${planLimit} of your daily ${userPlan} predictions. ${session ? 'Upgrade for more!' : 'Sign in or upgrade for more!'}`);
+      return;
+    }
+
+    setLoading(true);
+    setResult(null);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ carId, modIds: selected })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 429) {
+          setError(err.error || `Daily limit reached for ${userPlan} plan. Upgrade for more runs!`);
+          return;
+        }
+        throw new Error(err.error || `Request failed (${res.status})`);
+      }
+
+      const data: PredictResult = await res.json();
+      setResult(data);
+
+      if (!session) {
+        const key = getTodayUsageKey();
+        const newCount = usageCount + 1;
+        localStorage.setItem(key, String(newCount));
+        setUsageCount(newCount);
+      } else {
+        setUsageCount(prev => prev + 1);
+      }
+
+    } catch (e: any) {
+      setError(e?.message || 'Something went wrong.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onSave = async () => {
+    if (!session) return alert('Sign in to save builds.');
+    if (!car || !result) return;
+
+    const { error } = await supabase.from('builds').insert({
+      user_id: session.user.id,
+      car_id: car.id,
+      mod_ids: selected,
+      result,
+    });
+    if (error) alert('Save failed: ' + error.message);
+    else {
+      alert('Saved!');
+      loadMyBuilds();
+    }
+  };
+
+  // ------------------ usage status component ------------------
+  const UsageStatus = () => {
+    if (hasHitLimit) {
+      return (
+        <div className="card-modern p-6 border-red-500/50 bg-red-950/20">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-red-400 mb-1">Daily Limit Reached</h3>
+              <p className="text-sm text-red-300">
+                You've used all {planLimit} of your {userPlan} predictions today.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              {!session && (
+                <button 
+                  onClick={() => document.getElementById('email-input')?.focus()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105"
+                >
+                  Sign In
+                </button>
+              )}
+              <button className="btn-primary px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105">
+                Upgrade Plan
+              </button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-red-400">
+              <span>Daily Usage</span>
+              <span>{usageCount} / {planLimit}</span>
+            </div>
+            <div className="progress-bar h-2">
+              <div className="w-full h-full bg-red-600 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (isNearLimit) {
+      return (
+        <div className="card-modern p-6 border-yellow-500/50 bg-yellow-950/20">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-yellow-400 mb-1">Almost at your limit</h3>
+              <p className="text-sm text-yellow-300">
+                {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining on your {userPlan} plan today.
+              </p>
+            </div>
+            <button className="btn-primary px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105">
+              Upgrade Plan
+            </button>
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-yellow-400">
+              <span>Daily Usage</span>
+              <span>{usageCount} / {planLimit}</span>
+            </div>
+            <div className="progress-bar h-2">
+              <div className="progress-fill" style={{ width: `${usagePercentage}%` }}></div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="card-modern p-4 border-blue-500/30">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+            <span className="text-sm font-medium text-gray-300">
+              {userPlan} Plan: {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining
+            </span>
+          </div>
+          {!session && (
+            <span className="text-xs text-gray-500">Sign in for more features</span>
+          )}
+        </div>
+        <div className="space-y-2">
+          <div className="progress-bar h-1.5">
+            <div className="progress-fill" style={{ width: `${usagePercentage}%` }}></div>
+          </div>
+          <div className="text-xs text-gray-400">{usageCount} / {planLimit} used today</div>
+        </div>
+      </div>
+    );
+  };
+
+  // ------------------ boot: fetch data + auth ------------------
+  useEffect(() => {
+    (async () => {
+      const { data: carsData } = await supabase.from('cars').select('*').order('make');
+      const { data: modsData } = await supabase.from('mods').select('*').order('category');
+      setCars(carsData || []);
+      setMods(modsData || []);
+
+      const { data } = await supabase.auth.getSession();
+      setSession(data.session ?? null);
+      supabase.auth.onAuthStateChange((_evt, s) => setSession(s));
+    })();
+  }, []);
+
+  useEffect(() => {
+    updateUsageCount();
+    if (session) {
+      setUserPlan('FREE');
+    } else {
+      setUserPlan('FREE');
+    }
+  }, [session]);
+
+  useEffect(() => {
+    loadMyBuilds();
+  }, [session]);
+
   // ------------------ render ------------------
   return (
     <div className="space-y-8">
@@ -399,12 +594,6 @@ export default function Home() {
                   <div className="grid grid-cols-2 gap-4">
                     {result.zeroToSixty !== null && (
                       <div className="bg-gray-800/50 p-4 rounded-lg text-center">
-                        <p className="text-xs text-gray-400 mb-1">0-60 mph</p>
-                        <p className="text-xl font-bold text-white">{result.zeroToSixty.toFixed(2)}s</p>
-                      </div>
-                    )}
-                    {result.quarterMile !== null && (
-                      <div className="bg-gray-800/50 p-4 rounded-lg text-center">
                         <p className="text-xs text-gray-400 mb-1">Quarter Mile</p>
                         <p className="text-xl font-bold text-white">{result.quarterMile.toFixed(2)}s</p>
                       </div>
@@ -482,199 +671,10 @@ export default function Home() {
       )}
     </div>
   );
-}
-
-  // ------------------ boot: fetch data + auth ------------------
-  useEffect(() => {
-    (async () => {
-      const { data: carsData } = await supabase.from('cars').select('*').order('make');
-      const { data: modsData } = await supabase.from('mods').select('*').order('category');
-      setCars(carsData || []);
-      setMods(modsData || []);
-
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session ?? null);
-      supabase.auth.onAuthStateChange((_evt, s) => setSession(s));
-    })();
-  }, []);
-
-  useEffect(() => {
-    updateUsageCount();
-    if (session) {
-      setUserPlan('FREE');
-    } else {
-      setUserPlan('FREE');
-    }
-  }, [session]);
-
-  // ------------------ helper: load my builds ------------------
-  async function loadMyBuilds() {
-    if (!session) {
-      setMyBuilds([]);
-      return;
-    }
-    const { data } = await supabase
-      .from('builds')
-      .select('id, created_at, result, car_id, mod_ids')
-      .order('created_at', { ascending: false })
-      .limit(10);
-    setMyBuilds(data || []);
-  }
-
-  useEffect(() => {
-    loadMyBuilds();
-  }, [session]);
-
-  // ------------------ UI actions ------------------
-  const onPredict = async () => {
-    if (!carId) return;
-
-    if (hasHitLimit) {
-      setError(`You've used all ${planLimit} of your daily ${userPlan} predictions. ${session ? 'Upgrade for more!' : 'Sign in or upgrade for more!'}`);
-      return;
-    }
-
-    setLoading(true);
-    setResult(null);
-    setError(null);
-
-    try {
-      const res = await fetch('/api/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ carId, modIds: selected })
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        if (res.status === 429) {
-          setError(err.error || `Daily limit reached for ${userPlan} plan. Upgrade for more runs!`);
-          return;
-        }
-        throw new Error(err.error || `Request failed (${res.status})`);
-      }
-
-      const data: PredictResult = await res.json();
-      setResult(data);
-
-      if (!session) {
-        const key = getTodayUsageKey();
-        const newCount = usageCount + 1;
-        localStorage.setItem(key, String(newCount));
-        setUsageCount(newCount);
-      } else {
-        setUsageCount(prev => prev + 1);
-      }
-
-    } catch (e: any) {
-      setError(e?.message || 'Something went wrong.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onSave = async () => {
-    if (!session) return alert('Sign in to save builds.');
-    if (!car || !result) return;
-
-    const { error } = await supabase.from('builds').insert({
-      user_id: session.user.id,
-      car_id: car.id,
-      mod_ids: selected,
-      result,
-    });
-    if (error) alert('Save failed: ' + error.message);
-    else {
-      alert('Saved!');
-      loadMyBuilds();
-    }
-  };
-
-  // ------------------ usage status component ------------------
-  const UsageStatus = () => {
-    if (hasHitLimit) {
-      return (
-        <div className="card-modern p-6 border-red-500/50 bg-red-950/20">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-red-400 mb-1">Daily Limit Reached</h3>
-              <p className="text-sm text-red-300">
-                You've used all {planLimit} of your {userPlan} predictions today.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              {!session && (
-                <button 
-                  onClick={() => document.getElementById('email-input')?.focus()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105"
-                >
-                  Sign In
-                </button>
-              )}
-              <button className="btn-primary px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105">
-                Upgrade Plan
-              </button>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs text-red-400">
-              <span>Daily Usage</span>
-              <span>{usageCount} / {planLimit}</span>
-            </div>
-            <div className="progress-bar h-2">
-              <div className="w-full h-full bg-red-600 rounded-full"></div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (isNearLimit) {
-      return (
-        <div className="card-modern p-6 border-yellow-500/50 bg-yellow-950/20">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-yellow-400 mb-1">Almost at your limit</h3>
-              <p className="text-sm text-yellow-300">
-                {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining on your {userPlan} plan today.
-              </p>
-            </div>
-            <button className="btn-primary px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105">
-              Upgrade Plan
-            </button>
-          </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs text-yellow-400">
-              <span>Daily Usage</span>
-              <span>{usageCount} / {planLimit}</span>
-            </div>
-            <div className="progress-bar h-2">
-              <div className="progress-fill" style={{ width: `${usagePercentage}%` }}></div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="card-modern p-4 border-blue-500/30">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-            <span className="text-sm font-medium text-gray-300">
-              {userPlan} Plan: {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining
-            </span>
-          </div>
-          {!session && (
-            <span className="text-xs text-gray-500">Sign in for more features</span>
-          )}
-        </div>
-        <div className="space-y-2">
-          <div className="progress-bar h-1.5">
-            <div className="progress-fill" style={{ width: `${usagePercentage}%` }}></div>
-          </div>
-          <div className="text-xs text-gray-400">{usageCount} / {planLimit} used today</div>
-        </div>
-      </div>
-    );
-  };
+} mb-1">0-60 mph</p>
+                        <p className="text-xl font-bold text-white">{result.zeroToSixty.toFixed(2)}s</p>
+                      </div>
+                    )}
+                    {result.quarterMile !== null && (
+                      <div className="bg-gray-800/50 p-4 rounded-lg text-center">
+                        <p className="text-xs text-gray-400
