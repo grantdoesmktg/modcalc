@@ -35,6 +35,13 @@ type PredictResult = {
   notes?: string[];
 };
 
+// Usage limit constants
+const USAGE_LIMITS = {
+  FREE: 3,
+  PLUS: 30,
+  PRO: 200
+} as const;
+
 export default function Home() {
   // ------------------ app state ------------------
   const [session, setSession] = useState<Session | null>(null);
@@ -47,12 +54,36 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PredictResult | null>(null);
 
-  // NEW: error + limit state for 429 handling
+  // Enhanced usage tracking
   const [error, setError] = useState<string | null>(null);
-  const [hitLimit, setHitLimit] = useState(false);
+  const [usageCount, setUsageCount] = useState(0);
+  const [userPlan, setUserPlan] = useState<'FREE' | 'PLUS' | 'PRO'>('FREE');
 
   const [myBuilds, setMyBuilds] = useState<any[]>([]);
   const car = useMemo(() => cars.find((c) => c.id === carId) || null, [cars, carId]);
+
+  // Calculate usage info
+  const planLimit = USAGE_LIMITS[userPlan];
+  const usageRemaining = Math.max(0, planLimit - usageCount);
+  const usagePercentage = Math.round((usageCount / planLimit) * 100);
+  const isNearLimit = usagePercentage >= 80;
+  const hasHitLimit = usageCount >= planLimit;
+
+  // ------------------ helper: get today's usage ------------------
+  const getTodayUsageKey = () => `pred-count-${new Date().toISOString().slice(0, 10)}`;
+
+  const updateUsageCount = () => {
+    if (session) {
+      // For logged-in users, we'll need to fetch from server (simplified for now)
+      // In a real implementation, you'd want to fetch this from your usage_events table
+      setUsageCount(0); // Placeholder - would fetch real count
+    } else {
+      // For anonymous users, get from localStorage
+      const key = getTodayUsageKey();
+      const used = Number(localStorage.getItem(key) || 0);
+      setUsageCount(used);
+    }
+  };
 
   // ------------------ boot: fetch data + auth ------------------
   useEffect(() => {
@@ -70,6 +101,19 @@ export default function Home() {
       supabase.auth.onAuthStateChange((_evt, s) => setSession(s));
     })();
   }, []);
+
+  // Update usage count when session changes
+  useEffect(() => {
+    updateUsageCount();
+    
+    // Set user plan (in real implementation, this would come from Stripe/database)
+    if (session) {
+      // For now, assume logged-in users get PLUS (would be determined by subscription)
+      setUserPlan('FREE'); // Change this when you add Stripe integration
+    } else {
+      setUserPlan('FREE');
+    }
+  }, [session]);
 
   // ------------------ helper: load my builds ------------------
   async function loadMyBuilds() {
@@ -98,13 +142,9 @@ export default function Home() {
   const onPredict = async () => {
     if (!carId) return;
 
-    // simple free-tier limiter for anonymous users
-    const DAILY_FREE = 3;
-    const key = `pred-count-${new Date().toISOString().slice(0, 10)}`;
-    const used = Number(localStorage.getItem(key) || 0);
-    if (!session && used >= DAILY_FREE) {
-      setError('Daily limit reached for Free. Sign in or upgrade for more runs.');
-      setHitLimit(true);
+    // Check limit before making request
+    if (hasHitLimit) {
+      setError(`You've used all ${planLimit} of your daily ${userPlan} predictions. ${session ? 'Upgrade for more!' : 'Sign in or upgrade for more!'}`);
       return;
     }
 
@@ -122,8 +162,7 @@ export default function Home() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         if (res.status === 429) {
-          setError(err.error || 'Daily limit reached. Upgrade for more runs.');
-          setHitLimit(true);
+          setError(err.error || `Daily limit reached for ${userPlan} plan. Upgrade for more runs!`);
           return;
         }
         throw new Error(err.error || `Request failed (${res.status})`);
@@ -132,7 +171,17 @@ export default function Home() {
       const data: PredictResult = await res.json();
       setResult(data);
 
-      if (!session) localStorage.setItem(key, String(used + 1));
+      // Update local usage count
+      if (!session) {
+        const key = getTodayUsageKey();
+        const newCount = usageCount + 1;
+        localStorage.setItem(key, String(newCount));
+        setUsageCount(newCount);
+      } else {
+        // For logged-in users, increment the count (in real app, this would be fetched from server)
+        setUsageCount(prev => prev + 1);
+      }
+
     } catch (e: any) {
       setError(e?.message || 'Something went wrong.');
     } finally {
@@ -147,14 +196,102 @@ export default function Home() {
     const { error } = await supabase.from('builds').insert({
       user_id: session.user.id,
       car_id: car.id,
-      mod_ids: selected, // array of UUID strings
-      result,            // store snapshot
+      mod_ids: selected,
+      result,
     });
     if (error) alert('Save failed: ' + error.message);
     else {
       alert('Saved!');
       loadMyBuilds();
     }
+  };
+
+  // ------------------ usage status component ------------------
+  const UsageStatus = () => {
+    if (hasHitLimit) {
+      return (
+        <div className="mb-4 rounded-lg border border-red-500 bg-red-50 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-red-800">Daily Limit Reached</h3>
+              <p className="text-sm text-red-700">
+                You've used all {planLimit} of your {userPlan} predictions today.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {!session && (
+                <button 
+                  onClick={() => document.getElementById('email-input')?.focus()}
+                  className="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+                >
+                  Sign In
+                </button>
+              )}
+              <button className="rounded bg-black px-3 py-2 text-sm text-white hover:bg-gray-800">
+                Upgrade Plan
+              </button>
+            </div>
+          </div>
+          <div className="mt-3">
+            <div className="text-xs text-red-600 mb-1">Daily Usage</div>
+            <div className="w-full bg-red-200 rounded-full h-2">
+              <div className="bg-red-600 h-2 rounded-full" style={{ width: '100%' }}></div>
+            </div>
+            <div className="text-xs text-red-600 mt-1">{usageCount} / {planLimit} used</div>
+          </div>
+        </div>
+      );
+    }
+
+    if (isNearLimit) {
+      return (
+        <div className="mb-4 rounded-lg border border-yellow-500 bg-yellow-50 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-yellow-800">Almost at your limit</h3>
+              <p className="text-sm text-yellow-700">
+                {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining on your {userPlan} plan today.
+              </p>
+            </div>
+            <button className="rounded bg-black px-3 py-2 text-sm text-white hover:bg-gray-800">
+              Upgrade Plan
+            </button>
+          </div>
+          <div className="mt-3">
+            <div className="text-xs text-yellow-700 mb-1">Daily Usage</div>
+            <div className="w-full bg-yellow-200 rounded-full h-2">
+              <div className="bg-yellow-600 h-2 rounded-full" style={{ width: `${usagePercentage}%` }}></div>
+            </div>
+            <div className="text-xs text-yellow-700 mt-1">{usageCount} / {planLimit} used</div>
+          </div>
+        </div>
+      );
+    }
+
+    // Normal usage display
+    return (
+      <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-sm font-medium text-gray-700">
+              {userPlan} Plan: {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining today
+            </span>
+          </div>
+          {!session && (
+            <span className="text-xs text-gray-500">Sign in for more features</span>
+          )}
+        </div>
+        <div className="mt-2">
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+              style={{ width: `${usagePercentage}%` }}
+            ></div>
+          </div>
+          <div className="text-xs text-gray-600 mt-1">{usageCount} / {planLimit} used</div>
+        </div>
+      </div>
+    );
   };
 
   // ------------------ render ------------------
@@ -190,6 +327,7 @@ export default function Home() {
             }}
           >
             <input
+              id="email-input"
               type="email"
               required
               placeholder="you@example.com"
@@ -202,16 +340,13 @@ export default function Home() {
         )}
       </div>
 
-      {/* Upgrade wall / error banner */}
+      {/* Usage Status Display */}
+      <UsageStatus />
+
+      {/* Error display (for other errors) */}
       {error && (
         <div className="mb-4 rounded border border-red-500 bg-red-50 p-3 text-sm text-red-700">
           {error}
-          {hitLimit && (
-            <div className="mt-2 flex items-center gap-2">
-              <a href="/upgrade" className="rounded bg-black px-3 py-1 text-white">Upgrade plan</a>
-              <a href="/" className="rounded border px-3 py-1">Refresh</a>
-            </div>
-          )}
         </div>
       )}
 
@@ -274,11 +409,18 @@ export default function Home() {
           </div>
           <button
             onClick={onPredict}
-            disabled={!carId || loading || hitLimit}
-            className="mt-4 rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50"
+            disabled={!carId || loading || hasHitLimit}
+            className="mt-4 rounded-xl bg-black text-white px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Calculating…' : 'Calculate Build'}
+            {loading ? 'Calculating…' : hasHitLimit ? 'Daily Limit Reached' : 'Calculate Build'}
           </button>
+          
+          {/* Usage reminder near button */}
+          {!hasHitLimit && (
+            <div className="mt-2 text-xs text-gray-500">
+              {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining today
+            </div>
+          )}
         </section>
 
         {/* Results */}
