@@ -125,6 +125,365 @@ export default function Home() {
     }
   };
 
+  // ------------------ render ------------------
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="text-center space-y-4">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-950/30 border border-blue-500/30 rounded-full text-blue-400 text-sm font-medium">
+          <SparklesIcon />
+          Performance Tuning Calculator
+        </div>
+        <h1 className="text-4xl md:text-6xl font-bold gradient-text">
+          ModCalc
+        </h1>
+        <p className="text-xl text-gray-400 max-w-2xl mx-auto">
+          Calculate your car's performance gains with precision. Choose your vehicle, select modifications, and see the estimated power and acceleration improvements.
+        </p>
+      </div>
+
+      {/* Auth Section */}
+      <div className="card-modern p-6">
+        {session ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
+                <span className="text-white font-semibold text-sm">
+                  {session.user.email?.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-300">Signed in as</p>
+                <p className="text-sm text-gray-400">{session.user.email}</p>
+              </div>
+            </div>
+            <button
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition-colors duration-200"
+              onClick={() => supabase.auth.signOut()}
+            >
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <form
+            className="flex items-center gap-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const site = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+              const { error } = await supabase.auth.signInWithOtp({
+                email,
+                options: { emailRedirectTo: site }
+              });
+              if (error) alert(error.message);
+              else alert('Check your email for the magic link!');
+            }}
+          >
+            <div className="flex-1">
+              <input
+                id="email-input"
+                type="email"
+                required
+                placeholder="Enter your email to get started..."
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input-modern w-full"
+              />
+            </div>
+            <button className="btn-primary px-6 py-3 rounded-lg font-medium">
+              Sign In
+            </button>
+          </form>
+        )}
+      </div>
+
+      {/* Usage Status */}
+      <UsageStatus />
+
+      {/* Error Display */}
+      {error && (
+        <div className="card-modern p-4 border-red-500/50 bg-red-950/20">
+          <p className="text-red-300 text-sm">{error}</p>
+        </div>
+      )}
+
+      {/* Main Interface */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Step 1: Choose Car */}
+        <div className="card-modern p-6 space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+              <CarIcon />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-100">Choose Your Car</h2>
+              <p className="text-sm text-gray-400">Select your vehicle to get started</p>
+            </div>
+          </div>
+
+          <select
+            className="select-modern w-full"
+            value={carId ?? ''}
+            onChange={(e) => setCarId(e.target.value)}
+          >
+            <option value="">Select your car...</option>
+            {cars.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.year} {c.make} {c.model} {c.trim ?? ''}
+              </option>
+            ))}
+          </select>
+
+          {car && (
+            <div className="space-y-4 p-4 bg-gray-800/50 rounded-lg">
+              <h3 className="font-semibold text-gray-200">Stock Specifications</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1">
+                  <p className="text-gray-400">Power</p>
+                  <p className="font-semibold text-gray-200">{car.stock_hp} HP</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-400">Torque</p>
+                  <p className="font-semibold text-gray-200">{car.stock_tq} lb-ft</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-400">Weight</p>
+                  <p className="font-semibold text-gray-200">{car.curb_weight_lbs.toLocaleString()} lbs</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-400">Drivetrain</p>
+                  <p className="font-semibold text-gray-200">{car.drivetrain}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Step 2: Pick Mods */}
+        <div className="card-modern p-6 space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center">
+              <SettingsIcon />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-100">Select Modifications</h2>
+              <p className="text-sm text-gray-400">Choose your performance upgrades</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+            {Object.entries(modsByCategory).map(([category, categoryMods]) => (
+              <div key={category} className="space-y-2">
+                <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+                  {category}
+                </h3>
+                <div className="space-y-2">
+                  {categoryMods.map((mod) => (
+                    <label key={mod.id} className="flex items-start gap-3 p-3 bg-gray-800/30 rounded-lg hover:bg-gray-800/50 cursor-pointer transition-colors duration-200">
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(mod.id)}
+                        onChange={() => setSelected((prev) => (
+                          prev.includes(mod.id) ? prev.filter((x) => x !== mod.id) : [...prev, mod.id]
+                        ))}
+                        className="checkbox-modern mt-0.5"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-gray-200 text-sm">{mod.name}</span>
+                          {mod.needs_tune && (
+                            <span className="px-2 py-0.5 bg-yellow-600/20 text-yellow-400 text-xs rounded-full">
+                              Tune Required
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          +{mod.avg_hp_gain} HP • +{mod.avg_tq_gain} TQ • {mod.avg_weight_delta_lbs > 0 ? '+' : ''}{mod.avg_weight_delta_lbs} lbs
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-3 pt-4 border-t border-gray-700">
+            <button
+              onClick={onPredict}
+              disabled={!carId || loading || hasHitLimit}
+              className={`w-full py-3 px-4 rounded-lg font-semibold transition-all duration-200 ${
+                hasHitLimit 
+                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                  : loading 
+                    ? 'bg-blue-600 text-white pulse cursor-wait'
+                    : 'btn-primary text-white hover:scale-[1.02] glow-primary'
+              }`}
+            >
+              {loading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Calculating...
+                </div>
+              ) : hasHitLimit ? (
+                'Daily Limit Reached'
+              ) : (
+                'Calculate Performance'
+              )}
+            </button>
+            
+            {!hasHitLimit && (
+              <p className="text-xs text-center text-gray-400">
+                {usageRemaining} calculation{usageRemaining !== 1 ? 's' : ''} remaining today
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Step 3: Results */}
+        <div className="card-modern p-6 space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center">
+              <ChartIcon />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-100">Performance Results</h2>
+              <p className="text-sm text-gray-400">Your estimated gains</p>
+            </div>
+          </div>
+
+          {!result ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                <ChartIcon />
+              </div>
+              <p className="text-gray-400 text-sm">
+                {!carId ? 'Select a car and modifications to see results' : 'Click "Calculate Performance" to see your results'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Performance Metrics */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gradient-to-r from-blue-900/30 to-blue-800/30 p-4 rounded-lg">
+                  <p className="text-xs text-blue-300 uppercase tracking-wider mb-1">Horsepower</p>
+                  <p className="text-2xl font-bold text-white">{result.estimatedHp}</p>
+                  <p className="text-xs text-blue-300">
+                    +{result.estimatedHp - (car?.stock_hp || 0)} HP
+                  </p>
+                </div>
+                <div className="bg-gradient-to-r from-purple-900/30 to-purple-800/30 p-4 rounded-lg">
+                  <p className="text-xs text-purple-300 uppercase tracking-wider mb-1">Torque</p>
+                  <p className="text-2xl font-bold text-white">{result.estimatedTq}</p>
+                  <p className="text-xs text-purple-300">
+                    +{result.estimatedTq - (car?.stock_tq || 0)} lb-ft
+                  </p>
+                </div>
+                <div className="bg-gradient-to-r from-green-900/30 to-green-800/30 p-4 rounded-lg">
+                  <p className="text-xs text-green-300 uppercase tracking-wider mb-1">Power/Weight</p>
+                  <p className="text-2xl font-bold text-white">{result.powerToWeight.toFixed(3)}</p>
+                  <p className="text-xs text-green-300">hp/lb</p>
+                </div>
+                <div className="bg-gradient-to-r from-orange-900/30 to-orange-800/30 p-4 rounded-lg">
+                  <p className="text-xs text-orange-300 uppercase tracking-wider mb-1">Weight</p>
+                  <p className="text-2xl font-bold text-white">{result.estimatedWeight.toLocaleString()}</p>
+                  <p className="text-xs text-orange-300">lbs</p>
+                </div>
+              </div>
+
+              {/* Performance Times */}
+              {(result.zeroToSixty !== null || result.quarterMile !== null) && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+                    Acceleration Times
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    {result.zeroToSixty !== null && (
+                      <div className="bg-gray-800/50 p-4 rounded-lg text-center">
+                        <p className="text-xs text-gray-400 mb-1">0-60 mph</p>
+                        <p className="text-xl font-bold text-white">{result.zeroToSixty.toFixed(2)}s</p>
+                      </div>
+                    )}
+                    {result.quarterMile !== null && (
+                      <div className="bg-gray-800/50 p-4 rounded-lg text-center">
+                        <p className="text-xs text-gray-400 mb-1">Quarter Mile</p>
+                        <p className="text-xl font-bold text-white">{result.quarterMile.toFixed(2)}s</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              {result.notes?.length ? (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+                    Tuning Notes
+                  </h3>
+                  <div className="bg-yellow-950/20 border border-yellow-500/30 rounded-lg p-4">
+                    <ul className="space-y-2 text-sm text-yellow-200">
+                      {result.notes.map((note, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="text-yellow-400 mt-0.5">•</span>
+                          <span>{note}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Save Button */}
+              <button
+                onClick={onSave}
+                className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition-colors duration-200"
+              >
+                <SaveIcon />
+                Save This Build
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* My Builds Section */}
+      {session && myBuilds.length > 0 && (
+        <div className="card-modern p-6 space-y-6">
+          <h3 className="text-xl font-semibold text-gray-100">My Saved Builds</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {myBuilds.map((build) => (
+              <div key={build.id} className="bg-gray-800/50 p-4 rounded-lg space-y-3">
+                <div className="flex justify-between items-start">
+                  <p className="text-xs text-gray-400">
+                    {new Date(build.created_at).toLocaleDateString()}
+                  </p>
+                  <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
+                    {Array.isArray(build.mod_ids) ? build.mod_ids.length : 0} mods
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-gray-400">HP</p>
+                    <p className="font-semibold text-white">{build.result?.estimatedHp || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">TQ</p>
+                    <p className="font-semibold text-white">{build.result?.estimatedTq || '—'}</p>
+                  </div>
+                </div>
+                {build.result?.zeroToSixty && (
+                  <div className="text-xs text-gray-400">
+                    0-60: <span className="text-gray-300 font-medium">{build.result.zeroToSixty.toFixed(2)}s</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
   // ------------------ boot: fetch data + auth ------------------
   useEffect(() => {
     (async () => {
