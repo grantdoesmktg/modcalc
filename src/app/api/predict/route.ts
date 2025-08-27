@@ -15,22 +15,33 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // --- validate body
   const json = await req.json();
   const parsed = bodySchema.safeParse(json);
-  if (!parsed.success) return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
+  }
 
-  // identify user (if signed in)
+  // --- identify user (if signed in)
   const { data: auth } = await supabase.auth.getUser();
-  const userId = auth?.user?.id || null;
+  const userId = auth?.user?.id ?? null;
 
-  // limits (tune these later)
+  // --- limits (tune later)
   const FREE_DAILY = 3;
   const PLUS_DAILY = 30;
   const PRO_DAILY = 200;
 
-  // quick helper to count today's usage
+  // --- plan detection (wire to Stripe later)
+  // Optionally set NEXT_PUBLIC_DEFAULT_PLAN in Vercel (FREE|PLUS|PRO).
+  const limits = { FREE: FREE_DAILY, PLUS: PLUS_DAILY, PRO: PRO_DAILY } as const;
+  const envPlan = process.env.NEXT_PUBLIC_DEFAULT_PLAN as keyof typeof limits | undefined;
+  const plan: keyof typeof limits = envPlan ?? 'FREE';
+  const planLimit = limits[plan];
+
+  // --- helper: count today's usage for a user
   async function getTodayCount(uid: string) {
-    const start = new Date(); start.setHours(0,0,0,0);
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
     const { count } = await supabase
       .from('usage_events')
       .select('*', { count: 'exact', head: true })
@@ -39,36 +50,56 @@ export async function POST(req: NextRequest) {
     return count || 0;
   }
 
-  // plan detection (for now everyone = FREE; we’ll wire Stripe next)
-  const plan: 'FREE'|'PLUS'|'PRO' = 'FREE';
-  const planLimit = plan === 'PRO' ? PRO_DAILY : plan === 'PLUS' ? PLUS_DAILY : FREE_DAILY;
-
-  if (!userId) {
-    // anonymous users: client already has a localStorage limit,
-    // but we hard-cap here too (e.g., 3/day for anon)
-  } else {
+  // --- enforce server-side limit for signed-in users
+  if (userId) {
     const used = await getTodayCount(userId);
     if (used >= planLimit) {
-      return NextResponse.json({ error: `Daily limit reached for ${plan} plan.` }, { status: 429 });
+      return NextResponse.json(
+        { error: `Daily limit reached for ${plan} plan.` },
+        { status: 429 }
+      );
     }
-    // record usage (only for successful calls)
-    await supabase.from('usage_events').insert({ user_id: userId });
   }
-  
+  // (Anonymous users are already rate-limited in the client via localStorage.)
+
+  // --- fetch data
   const { carId, modIds } = parsed.data;
-  const { data: car, error: carErr } = await supabase.from('cars').select('*').eq('id', carId).single();
-  if (carErr || !car) return NextResponse.json({ error: 'Car not found' }, { status: 404 });
+  const { data: car, error: carErr } = await supabase
+    .from('cars')
+    .select('*')
+    .eq('id', carId)
+    .single();
+  if (carErr || !car) {
+    return NextResponse.json({ error: 'Car not found' }, { status: 404 });
+  }
 
-  const { data: mods } = await supabase.from('mods').select('*').in('id', modIds);
+  const { data: mods } = await supabase
+    .from('mods')
+    .select('*')
+    .in('id', modIds);
 
+  // --- compute
   let result = basePredict(car as any, (mods || []) as any[]);
-  const needsAI = (mods || []).some(m => m.needs_tune) || (mods || []).length === 0;
+  const needsAI =
+    (mods || []).some((m) => m.needs_tune) || (mods || []).length === 0;
 
   if (needsAI) {
     try {
       const ai = await aiFallback(car, mods || []);
-      result = { ...result, ...ai, notes: [...(result.notes||[]), ...(ai.notes||[])] };
-    } catch { /* ignore */ }
+      result = {
+        ...result,
+        ...ai,
+        notes: [...(result.notes || []), ...(ai.notes || [])]
+      };
+    } catch {
+      // ignore AI failures; return base result
+    }
   }
+
+  // --- record usage AFTER a successful prediction (signed-in users only)
+  if (userId) {
+    await supabase.from('usage_events').insert({ user_id: userId });
+  }
+
   return NextResponse.json(result);
 }
