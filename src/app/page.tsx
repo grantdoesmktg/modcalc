@@ -158,9 +158,13 @@ export default function Home() {
             className="flex items-center gap-2"
             onSubmit={async (e) => {
               e.preventDefault();
-              const { error } = await supabase.auth.signInWithOtp({ email });
-              if (error) alert(error.message);
-              else alert('Check your email for the magic link!');
+              const site = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+const { error } = await supabase.auth.signInWithOtp({
+  email,
+  options: { emailRedirectTo: site }
+});
+if (error) alert(error.message);
+else alert('Check your email for the magic link!');
             }}
           >
             <input
