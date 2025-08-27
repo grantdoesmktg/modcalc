@@ -672,9 +672,3 @@ export default function Home() {
     </div>
   );
 } mb-1">0-60 mph</p>
-                        <p className="text-xl font-bold text-white">{result.zeroToSixty.toFixed(2)}s</p>
-                      </div>
-                    )}
-                    {result.quarterMile !== null && (
-                      <div className="bg-gray-800/50 p-4 rounded-lg text-center">
-                        <p className="text-xs text-gray-400
