@@ -1,11 +1,12 @@
-'use client';
-import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+// ... existing imports
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+type Session = Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session'];
 
 type Car = {
   id: string; make: string; model: string; year: number; trim: string|null;
