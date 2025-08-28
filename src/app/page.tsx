@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient, type Session } from '@supabase/supabase-js';
+import VehiclePickerClient from '../components/VehiclePickerClient';
 
 // --- Supabase browser client (uses your public env vars)
 const supabase = createClient(
@@ -567,29 +568,9 @@ export default function Home() {
           </div>
 
           <div className="relative">
-            <select
-              className="select-modern w-full"
-              value={carId}
-              onChange={handleCarChange}
-              style={{ 
-                WebkitAppearance: 'none',
-                MozAppearance: 'none',
-                appearance: 'none'
-              }}
-            >
-              <option value="">Select your car...</option>
-              {cars.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.year} {c.make} {c.model} {c.trim ? ` ${c.trim}` : ''}
-                </option>
-              ))}
-            </select>
-            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
+  {/* Supabase-backed vehicle picker */}
+  <VehiclePickerClient />
+</div>
 
           {car && (
             <div className="space-y-4 p-4 bg-gray-800/50 rounded-lg">
