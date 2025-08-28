@@ -97,6 +97,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [usageCount, setUsageCount] = useState(0);
   const [userPlan, setUserPlan] = useState<'FREE' | 'PLUS' | 'PRO'>('FREE');
+  const [saving, setSaving] = useState(false);
 
   const [myBuilds, setMyBuilds] = useState<any[]>([]);
   const car = useMemo(() => cars.find((c) => c.id === carId) || null, [cars, carId]);
@@ -132,42 +133,31 @@ export default function Home() {
   };
 
   // ------------------ helper: delete build ------------------
-  async function deleteBuild(buildId: string | number) {
+  const deleteBuild = async (buildId: string | number) => {
     if (!session) return;
 
     if (!confirm('Are you sure you want to delete this build?')) return;
 
     try {
-      // Try to delete from Supabase first
-      const { error } = await supabase
-        .from('builds')
-        .delete()
-        .eq('id', buildId)
-        .eq('user_id', session.user.id);
-
-      if (error && (error.code === 'PGRST116' || error.message.includes('relation "public.builds" does not exist'))) {
-        // Delete from localStorage
-        const localBuilds = JSON.parse(localStorage.getItem('saved_builds') || '[]');
-        const updatedBuilds = localBuilds.filter((build: any, index: number) => 
-          (build.id || index) !== buildId && build.user_id === session.user.id
-        );
-        localStorage.setItem('saved_builds', JSON.stringify(updatedBuilds));
-        setMyBuilds(updatedBuilds.filter((build: any) => build.user_id === session.user.id));
-        return;
-      }
-
-      if (error) {
-        throw error;
-      }
-
-      // Refresh builds list
-      await loadMyBuilds();
+      // Delete from localStorage
+      const localBuilds = JSON.parse(localStorage.getItem('saved_builds') || '[]');
+      const updatedBuilds = localBuilds.filter((build: any, index: number) => 
+        (build.id || index.toString()) !== buildId.toString()
+      );
+      
+      localStorage.setItem('saved_builds', JSON.stringify(updatedBuilds));
+      
+      // Update the display with user's builds only
+      const userBuilds = updatedBuilds.filter((build: any) => 
+        build.user_id === session.user.id || build.user_email === session.user.email
+      );
+      setMyBuilds(userBuilds);
       
     } catch (error: any) {
       console.error('Error deleting build:', error);
       alert(`Failed to delete build: ${error.message}`);
     }
-  }
+  };
   async function loadMyBuilds() {
     if (!session) {
       setMyBuilds([]);
@@ -254,8 +244,6 @@ export default function Home() {
     }
   };
 
-  const [saving, setSaving] = useState(false);
-
   const onSave = async () => {
     if (!session) {
       alert('Please sign in to save builds.');
@@ -270,64 +258,37 @@ export default function Home() {
     setSaving(true);
     
     try {
-      console.log('Attempting to save build...', {
+      // Always use localStorage for now since it's more reliable
+      const buildData = {
+        id: Date.now().toString(),
         user_id: session.user.id,
+        user_email: session.user.email,
         car_id: car.id,
+        car_info: `${car.year} ${car.make} ${car.model} ${car.trim || ''}`.trim(),
         mod_ids: selected,
-        result: result
-      });
+        mod_count: selected.length,
+        result: result,
+        created_at: new Date().toISOString()
+      };
 
-      const { data, error } = await supabase
-        .from('builds')
-        .insert({
-          user_id: session.user.id,
-          car_id: car.id,
-          mod_ids: selected,
-          result: result,
-          created_at: new Date().toISOString()
-        })
-        .select();
-
-      if (error) {
-        console.error('Supabase error:', error);
-        
-        // If builds table doesn't exist, store in localStorage as fallback
-        if (error.code === 'PGRST116' || error.message.includes('relation "public.builds" does not exist')) {
-          console.log('Builds table does not exist, using localStorage fallback');
-          
-          const buildData = {
-            id: Date.now().toString(),
-            user_id: session.user.id,
-            car_id: car.id,
-            car_info: `${car.year} ${car.make} ${car.model} ${car.trim || ''}`,
-            mod_ids: selected,
-            mod_count: selected.length,
-            result: result,
-            created_at: new Date().toISOString()
-          };
-
-          // Get existing builds from localStorage
-          const existingBuilds = JSON.parse(localStorage.getItem('saved_builds') || '[]');
-          existingBuilds.unshift(buildData); // Add new build to the beginning
-          
-          // Keep only the last 10 builds
-          if (existingBuilds.length > 10) {
-            existingBuilds.splice(10);
-          }
-          
-          localStorage.setItem('saved_builds', JSON.stringify(existingBuilds));
-          setMyBuilds(existingBuilds.filter((build: any) => build.user_id === session.user.id));
-          
-          alert('Build saved successfully! (Using local storage)');
-          return;
-        }
-        
-        throw new Error(error.message);
+      // Get existing builds from localStorage
+      const existingBuilds = JSON.parse(localStorage.getItem('saved_builds') || '[]');
+      existingBuilds.unshift(buildData); // Add new build to the beginning
+      
+      // Keep only the last 20 builds
+      if (existingBuilds.length > 20) {
+        existingBuilds.splice(20);
       }
-
-      console.log('Build saved successfully:', data);
+      
+      localStorage.setItem('saved_builds', JSON.stringify(existingBuilds));
+      
+      // Update the builds display with user's builds only
+      const userBuilds = existingBuilds.filter((build: any) => 
+        build.user_id === session.user.id || build.user_email === session.user.email
+      );
+      setMyBuilds(userBuilds);
+      
       alert('Build saved successfully!');
-      await loadMyBuilds(); // Refresh the builds list
       
     } catch (error: any) {
       console.error('Error saving build:', error);
@@ -628,16 +589,6 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </div>
-          </div>
-
-          {/* Debug info - remove this in production */}
-          <div className="text-xs text-gray-500 p-3 bg-gray-900 rounded space-y-1">
-            <div>Debug: {cars.length} cars loaded, selected: "{carId}"</div>
-            <div>Supabase URL: {process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓ Set' : '✗ Missing'}</div>
-            <div>Supabase Key: {process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✓ Set' : '✗ Missing'}</div>
-            {cars.length > 0 && (
-              <div>Sample car: {JSON.stringify(cars[0], null, 2)}</div>
-            )}
           </div>
 
           {car && (
