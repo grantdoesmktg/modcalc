@@ -12,10 +12,16 @@ const supabase = createClient(
 // --- Types that match our tables
 type Car = {
   id: string;
-  make: string; model: string; year: number; trim: string | null;
-  curb_weight_lbs: number; stock_hp: number; stock_tq: number;
-  drivetrain: 'FWD' | 'RWD' | 'AWD';
-  zero_to_sixty_s: number | null; quarter_mile_s: number | null;
+  make: string; 
+  model: string; 
+  year: number; 
+  trim: string | null;
+  curb_weight_lbs?: number; 
+  stock_hp?: number; 
+  stock_tq?: number;
+  drivetrain?: 'FWD' | 'RWD' | 'AWD';
+  zero_to_sixty_s?: number | null; 
+  quarter_mile_s?: number | null;
 };
 
 type Mod = {
@@ -322,146 +328,45 @@ export default function Home() {
   useEffect(() => {
     (async () => {
       try {
-        const { data: carsData, error: carsError } = await supabase.from('cars').select('*').order('make');
-        const { data: modsData, error: modsError } = await supabase.from('mods').select('*').order('category');
+        console.log('Fetching data from Supabase...'); // Debug log
         
+        const { data: carsData, error: carsError } = await supabase
+          .from('cars')
+          .select('*')
+          .order('make', { ascending: true });
+          
+        const { data: modsData, error: modsError } = await supabase
+          .from('mods') 
+          .select('*')
+          .order('category', { ascending: true });
+
         if (carsError) {
           console.error('Error fetching cars:', carsError);
-          // If no cars table exists, create some sample data
-          setCars([
-            {
-              id: '1',
-              make: 'Honda',
-              model: 'Civic Type R',
-              year: 2023,
-              trim: 'FL5',
-              curb_weight_lbs: 3125,
-              stock_hp: 315,
-              stock_tq: 310,
-              drivetrain: 'FWD' as const,
-              zero_to_sixty_s: 5.0,
-              quarter_mile_s: 13.4
-            },
-            {
-              id: '2', 
-              make: 'Subaru',
-              model: 'WRX STI',
-              year: 2021,
-              trim: null,
-              curb_weight_lbs: 3391,
-              stock_hp: 310,
-              stock_tq: 290,
-              drivetrain: 'AWD' as const,
-              zero_to_sixty_s: 5.2,
-              quarter_mile_s: 13.6
-            },
-            {
-              id: '3',
-              make: 'BMW',
-              model: 'M3',
-              year: 2023,
-              trim: 'Competition',
-              curb_weight_lbs: 3830,
-              stock_hp: 503,
-              stock_tq: 479,
-              drivetrain: 'RWD' as const,
-              zero_to_sixty_s: 3.8,
-              quarter_mile_s: 12.1
-            }
-          ]);
         } else {
+          console.log('Cars fetched:', carsData); // Debug log
           setCars(carsData || []);
         }
 
         if (modsError) {
           console.error('Error fetching mods:', modsError);
-          // If no mods table exists, create some sample data
-          setMods([
-            {
-              id: '1',
-              slug: 'carbon-hood',
-              name: 'Carbon Hood',
-              category: 'AERO_WEIGHT',
-              avg_hp_gain: 0,
-              avg_tq_gain: 0,
-              avg_weight_delta_lbs: -20,
-              needs_tune: false,
-              notes: null
-            },
-            {
-              id: '2',
-              slug: 'upgraded-intercooler',
-              name: 'Upgraded Intercooler', 
-              category: 'COOLING',
-              avg_hp_gain: 0,
-              avg_tq_gain: 0,
-              avg_weight_delta_lbs: 5,
-              needs_tune: false,
-              notes: null
-            },
-            {
-              id: '3',
-              slug: 'high-flow-downpipe',
-              name: 'High-Flow Downpipe',
-              category: 'EXHAUST', 
-              avg_hp_gain: 18,
-              avg_tq_gain: 20,
-              avg_weight_delta_lbs: -2,
-              needs_tune: true,
-              notes: null
-            },
-            {
-              id: '4',
-              slug: 'catback-exhaust',
-              name: 'Cat-back Exhaust',
-              category: 'EXHAUST',
-              avg_hp_gain: 10,
-              avg_tq_gain: 8,
-              avg_weight_delta_lbs: -5,
-              needs_tune: false,
-              notes: null
-            }
-          ]);
         } else {
+          console.log('Mods fetched:', modsData); // Debug log
           setMods(modsData || []);
         }
+
+        // Auth setup
+        const { data: authData } = await supabase.auth.getSession();
+        setSession(authData.session ?? null);
+        
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, s) => {
+          setSession(s);
+        });
+
+        return () => subscription.unsubscribe();
+        
       } catch (error) {
         console.error('Error during data fetch:', error);
-        // Fallback to sample data if there are any connection issues
-        setCars([
-          {
-            id: '1',
-            make: 'Honda',
-            model: 'Civic Type R',
-            year: 2023,
-            trim: 'FL5',
-            curb_weight_lbs: 3125,
-            stock_hp: 315,
-            stock_tq: 310,
-            drivetrain: 'FWD' as const,
-            zero_to_sixty_s: 5.0,
-            quarter_mile_s: 13.4
-          }
-        ]);
-        
-        setMods([
-          {
-            id: '1',
-            slug: 'carbon-hood',
-            name: 'Carbon Hood',
-            category: 'AERO_WEIGHT',
-            avg_hp_gain: 0,
-            avg_tq_gain: 0,
-            avg_weight_delta_lbs: -20,
-            needs_tune: false,
-            notes: null
-          }
-        ]);
       }
-
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session ?? null);
-      supabase.auth.onAuthStateChange((_evt, s) => setSession(s));
     })();
   }, []);
 
@@ -599,11 +504,14 @@ export default function Home() {
           </div>
 
           {/* Debug info - remove this in production */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="text-xs text-gray-500 p-2 bg-gray-900 rounded">
-              Debug: {cars.length} cars loaded, selected: "{carId}"
-            </div>
-          )}
+          <div className="text-xs text-gray-500 p-3 bg-gray-900 rounded space-y-1">
+            <div>Debug: {cars.length} cars loaded, selected: "{carId}"</div>
+            <div>Supabase URL: {process.env.NEXT_PUBLIC_SUPABASE_URL ? '✓ Set' : '✗ Missing'}</div>
+            <div>Supabase Key: {process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✓ Set' : '✗ Missing'}</div>
+            {cars.length > 0 && (
+              <div>Sample car: {JSON.stringify(cars[0], null, 2)}</div>
+            )}
+          </div>
 
           {car && (
             <div className="space-y-4 p-4 bg-gray-800/50 rounded-lg">
@@ -611,19 +519,27 @@ export default function Home() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1">
                   <p className="text-gray-400">Power</p>
-                  <p className="font-semibold text-gray-200">{car.stock_hp} HP</p>
+                  <p className="font-semibold text-gray-200">
+                    {car.stock_hp ? `${car.stock_hp} HP` : 'N/A'}
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-gray-400">Torque</p>
-                  <p className="font-semibold text-gray-200">{car.stock_tq} lb-ft</p>
+                  <p className="font-semibold text-gray-200">
+                    {car.stock_tq ? `${car.stock_tq} lb-ft` : 'N/A'}
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-gray-400">Weight</p>
-                  <p className="font-semibold text-gray-200">{car.curb_weight_lbs.toLocaleString()} lbs</p>
+                  <p className="font-semibold text-gray-200">
+                    {car.curb_weight_lbs ? `${car.curb_weight_lbs.toLocaleString()} lbs` : 'N/A'}
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-gray-400">Drivetrain</p>
-                  <p className="font-semibold text-gray-200">{car.drivetrain}</p>
+                  <p className="font-semibold text-gray-200">
+                    {car.drivetrain || 'N/A'}
+                  </p>
                 </div>
               </div>
             </div>
