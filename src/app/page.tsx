@@ -207,6 +207,7 @@ export default function Home() {
   // Handle dropdown change
   const handleCarChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
+    console.log('Car selected:', value); // Debug log
     setCarId(value);
     // Clear results when car changes
     setResult(null);
@@ -320,10 +321,143 @@ export default function Home() {
   // ------------------ boot: fetch data + auth ------------------
   useEffect(() => {
     (async () => {
-      const { data: carsData } = await supabase.from('cars').select('*').order('make');
-      const { data: modsData } = await supabase.from('mods').select('*').order('category');
-      setCars(carsData || []);
-      setMods(modsData || []);
+      try {
+        const { data: carsData, error: carsError } = await supabase.from('cars').select('*').order('make');
+        const { data: modsData, error: modsError } = await supabase.from('mods').select('*').order('category');
+        
+        if (carsError) {
+          console.error('Error fetching cars:', carsError);
+          // If no cars table exists, create some sample data
+          setCars([
+            {
+              id: '1',
+              make: 'Honda',
+              model: 'Civic Type R',
+              year: 2023,
+              trim: 'FL5',
+              curb_weight_lbs: 3125,
+              stock_hp: 315,
+              stock_tq: 310,
+              drivetrain: 'FWD' as const,
+              zero_to_sixty_s: 5.0,
+              quarter_mile_s: 13.4
+            },
+            {
+              id: '2', 
+              make: 'Subaru',
+              model: 'WRX STI',
+              year: 2021,
+              trim: null,
+              curb_weight_lbs: 3391,
+              stock_hp: 310,
+              stock_tq: 290,
+              drivetrain: 'AWD' as const,
+              zero_to_sixty_s: 5.2,
+              quarter_mile_s: 13.6
+            },
+            {
+              id: '3',
+              make: 'BMW',
+              model: 'M3',
+              year: 2023,
+              trim: 'Competition',
+              curb_weight_lbs: 3830,
+              stock_hp: 503,
+              stock_tq: 479,
+              drivetrain: 'RWD' as const,
+              zero_to_sixty_s: 3.8,
+              quarter_mile_s: 12.1
+            }
+          ]);
+        } else {
+          setCars(carsData || []);
+        }
+
+        if (modsError) {
+          console.error('Error fetching mods:', modsError);
+          // If no mods table exists, create some sample data
+          setMods([
+            {
+              id: '1',
+              slug: 'carbon-hood',
+              name: 'Carbon Hood',
+              category: 'AERO_WEIGHT',
+              avg_hp_gain: 0,
+              avg_tq_gain: 0,
+              avg_weight_delta_lbs: -20,
+              needs_tune: false,
+              notes: null
+            },
+            {
+              id: '2',
+              slug: 'upgraded-intercooler',
+              name: 'Upgraded Intercooler', 
+              category: 'COOLING',
+              avg_hp_gain: 0,
+              avg_tq_gain: 0,
+              avg_weight_delta_lbs: 5,
+              needs_tune: false,
+              notes: null
+            },
+            {
+              id: '3',
+              slug: 'high-flow-downpipe',
+              name: 'High-Flow Downpipe',
+              category: 'EXHAUST', 
+              avg_hp_gain: 18,
+              avg_tq_gain: 20,
+              avg_weight_delta_lbs: -2,
+              needs_tune: true,
+              notes: null
+            },
+            {
+              id: '4',
+              slug: 'catback-exhaust',
+              name: 'Cat-back Exhaust',
+              category: 'EXHAUST',
+              avg_hp_gain: 10,
+              avg_tq_gain: 8,
+              avg_weight_delta_lbs: -5,
+              needs_tune: false,
+              notes: null
+            }
+          ]);
+        } else {
+          setMods(modsData || []);
+        }
+      } catch (error) {
+        console.error('Error during data fetch:', error);
+        // Fallback to sample data if there are any connection issues
+        setCars([
+          {
+            id: '1',
+            make: 'Honda',
+            model: 'Civic Type R',
+            year: 2023,
+            trim: 'FL5',
+            curb_weight_lbs: 3125,
+            stock_hp: 315,
+            stock_tq: 310,
+            drivetrain: 'FWD' as const,
+            zero_to_sixty_s: 5.0,
+            quarter_mile_s: 13.4
+          }
+        ]);
+        
+        setMods([
+          {
+            id: '1',
+            slug: 'carbon-hood',
+            name: 'Carbon Hood',
+            category: 'AERO_WEIGHT',
+            avg_hp_gain: 0,
+            avg_tq_gain: 0,
+            avg_weight_delta_lbs: -20,
+            needs_tune: false,
+            notes: null
+          }
+        ]);
+      }
 
       const { data } = await supabase.auth.getSession();
       setSession(data.session ?? null);
@@ -439,18 +573,37 @@ export default function Home() {
             </div>
           </div>
 
-          <select
-            className="select-modern w-full"
-            value={carId}
-            onChange={handleCarChange}
-          >
-            <option value="">Select your car...</option>
-            {cars.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.year} {c.make} {c.model} {c.trim ? ` ${c.trim}` : ''}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              className="select-modern w-full"
+              value={carId}
+              onChange={handleCarChange}
+              style={{ 
+                WebkitAppearance: 'none',
+                MozAppearance: 'none',
+                appearance: 'none'
+              }}
+            >
+              <option value="">Select your car...</option>
+              {cars.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.year} {c.make} {c.model} {c.trim ? ` ${c.trim}` : ''}
+                </option>
+              ))}
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Debug info - remove this in production */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="text-xs text-gray-500 p-2 bg-gray-900 rounded">
+              Debug: {cars.length} cars loaded, selected: "{carId}"
+            </div>
+          )}
 
           {car && (
             <div className="space-y-4 p-4 bg-gray-800/50 rounded-lg">
