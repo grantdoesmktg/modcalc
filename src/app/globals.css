@@ -92,8 +92,8 @@ body {
   scrollbar-color: var(--accent) var(--muted);
 }
 
-/* Smooth animations - but exclude transform properties that can break dropdowns */
-*:not(select):not(option) {
+/* Smooth animations - FIXED: Exclude transform on buttons and interactive elements */
+*:not(select):not(option):not(button):not(input[type="button"]):not(input[type="submit"]):not(input[type="reset"]):not([role="button"]) {
   transition: color 0.2s ease-in-out, background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, opacity 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
 
@@ -154,7 +154,7 @@ body {
   animation: float 6s ease-in-out infinite;
 }
 
-/* Custom button styles */
+/* FIXED: Button styles - removed problematic transforms */
 .btn-primary {
   background: var(--gradient-primary);
   border: none;
@@ -164,21 +164,16 @@ body {
   overflow: hidden;
   cursor: pointer;
   user-select: none;
+  transition: box-shadow 0.2s ease-in-out, background-color 0.2s ease-in-out;
 }
 
 .btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
-.btn-primary:active:not(:disabled) {
-  transform: translateY(0);
 }
 
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  transform: none;
   box-shadow: none;
 }
 
@@ -197,19 +192,20 @@ body {
   left: 100%;
 }
 
-/* Enhanced button interactions */
+/* FIXED: Enhanced button interactions - removed transforms that break functionality */
 button {
   cursor: pointer;
   user-select: none;
-  transition: all 0.2s ease-in-out;
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out, opacity 0.2s ease-in-out;
+  /* Remove any transform transitions that interfere with click events */
 }
 
 button:hover:not(:disabled) {
-  transform: translateY(-1px);
+  /* Removed transform: translateY(-1px); - this was causing the click issues */
 }
 
 button:active:not(:disabled) {
-  transform: translateY(0);
+  /* Removed transform: translateY(0); */
 }
 
 button:disabled {
@@ -241,6 +237,7 @@ button:disabled {
   mask-composite: subtract;
   opacity: 0;
   transition: opacity 0.3s;
+  pointer-events: none; /* FIXED: Ensure pseudo-elements don't interfere */
 }
 
 .card-modern:hover::before {
@@ -415,6 +412,7 @@ button:focus {
   );
   background-size: 50px 50px;
   animation: move 2s linear infinite;
+  pointer-events: none; /* FIXED: Ensure pseudo-elements don't interfere */
 }
 
 @keyframes move {
