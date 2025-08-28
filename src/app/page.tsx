@@ -131,18 +131,79 @@ export default function Home() {
     }
   };
 
-  // ------------------ helper: load my builds ------------------
+  // ------------------ helper: delete build ------------------
+  async function deleteBuild(buildId: string | number) {
+    if (!session) return;
+
+    if (!confirm('Are you sure you want to delete this build?')) return;
+
+    try {
+      // Try to delete from Supabase first
+      const { error } = await supabase
+        .from('builds')
+        .delete()
+        .eq('id', buildId)
+        .eq('user_id', session.user.id);
+
+      if (error && (error.code === 'PGRST116' || error.message.includes('relation "public.builds" does not exist'))) {
+        // Delete from localStorage
+        const localBuilds = JSON.parse(localStorage.getItem('saved_builds') || '[]');
+        const updatedBuilds = localBuilds.filter((build: any, index: number) => 
+          (build.id || index) !== buildId && build.user_id === session.user.id
+        );
+        localStorage.setItem('saved_builds', JSON.stringify(updatedBuilds));
+        setMyBuilds(updatedBuilds.filter((build: any) => build.user_id === session.user.id));
+        return;
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      // Refresh builds list
+      await loadMyBuilds();
+      
+    } catch (error: any) {
+      console.error('Error deleting build:', error);
+      alert(`Failed to delete build: ${error.message}`);
+    }
+  }
   async function loadMyBuilds() {
     if (!session) {
       setMyBuilds([]);
       return;
     }
-    const { data } = await supabase
-      .from('builds')
-      .select('id, created_at, result, car_id, mod_ids')
-      .order('created_at', { ascending: false })
-      .limit(10);
-    setMyBuilds(data || []);
+
+    try {
+      const { data, error } = await supabase
+        .from('builds')
+        .select('id, created_at, result, car_id, mod_ids')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        console.error('Error loading builds from Supabase:', error);
+        
+        // If builds table doesn't exist, use localStorage
+        if (error.code === 'PGRST116' || error.message.includes('relation "public.builds" does not exist')) {
+          console.log('Loading builds from localStorage');
+          const localBuilds = JSON.parse(localStorage.getItem('saved_builds') || '[]');
+          // Filter builds for current user
+          const userBuilds = localBuilds.filter((build: any) => build.user_id === session.user.id);
+          setMyBuilds(userBuilds);
+          return;
+        }
+        
+        throw error;
+      }
+
+      setMyBuilds(data || []);
+      
+    } catch (error) {
+      console.error('Failed to load builds:', error);
+      setMyBuilds([]);
+    }
   }
 
   // ------------------ UI actions ------------------
@@ -193,20 +254,86 @@ export default function Home() {
     }
   };
 
-  const onSave = async () => {
-    if (!session) return alert('Sign in to save builds.');
-    if (!car || !result) return;
+  const [saving, setSaving] = useState(false);
 
-    const { error } = await supabase.from('builds').insert({
-      user_id: session.user.id,
-      car_id: car.id,
-      mod_ids: selected,
-      result,
-    });
-    if (error) alert('Save failed: ' + error.message);
-    else {
-      alert('Saved!');
-      loadMyBuilds();
+  const onSave = async () => {
+    if (!session) {
+      alert('Please sign in to save builds.');
+      return;
+    }
+    
+    if (!car || !result) {
+      alert('Please select a car and calculate performance first.');
+      return;
+    }
+
+    setSaving(true);
+    
+    try {
+      console.log('Attempting to save build...', {
+        user_id: session.user.id,
+        car_id: car.id,
+        mod_ids: selected,
+        result: result
+      });
+
+      const { data, error } = await supabase
+        .from('builds')
+        .insert({
+          user_id: session.user.id,
+          car_id: car.id,
+          mod_ids: selected,
+          result: result,
+          created_at: new Date().toISOString()
+        })
+        .select();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        
+        // If builds table doesn't exist, store in localStorage as fallback
+        if (error.code === 'PGRST116' || error.message.includes('relation "public.builds" does not exist')) {
+          console.log('Builds table does not exist, using localStorage fallback');
+          
+          const buildData = {
+            id: Date.now().toString(),
+            user_id: session.user.id,
+            car_id: car.id,
+            car_info: `${car.year} ${car.make} ${car.model} ${car.trim || ''}`,
+            mod_ids: selected,
+            mod_count: selected.length,
+            result: result,
+            created_at: new Date().toISOString()
+          };
+
+          // Get existing builds from localStorage
+          const existingBuilds = JSON.parse(localStorage.getItem('saved_builds') || '[]');
+          existingBuilds.unshift(buildData); // Add new build to the beginning
+          
+          // Keep only the last 10 builds
+          if (existingBuilds.length > 10) {
+            existingBuilds.splice(10);
+          }
+          
+          localStorage.setItem('saved_builds', JSON.stringify(existingBuilds));
+          setMyBuilds(existingBuilds.filter((build: any) => build.user_id === session.user.id));
+          
+          alert('Build saved successfully! (Using local storage)');
+          return;
+        }
+        
+        throw new Error(error.message);
+      }
+
+      console.log('Build saved successfully:', data);
+      alert('Build saved successfully!');
+      await loadMyBuilds(); // Refresh the builds list
+      
+    } catch (error: any) {
+      console.error('Error saving build:', error);
+      alert(`Failed to save build: ${error.message}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -724,11 +851,26 @@ export default function Home() {
               {/* Save Button */}
               <button
                 onClick={onSave}
-                disabled={!session}
-                className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-gray-300 rounded-lg text-sm transition-colors duration-200"
+                disabled={!session || saving || !result}
+                className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm transition-all duration-200 ${
+                  !session || !result
+                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                    : saving
+                      ? 'bg-blue-600 text-white cursor-wait'
+                      : 'bg-gray-700 hover:bg-gray-600 text-gray-300 hover:scale-[1.02]'
+                }`}
               >
-                <SaveIcon />
-                {session ? 'Save This Build' : 'Sign in to Save'}
+                {saving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <SaveIcon />
+                    {!session ? 'Sign in to Save' : !result ? 'Calculate First' : 'Save This Build'}
+                  </>
+                )}
               </button>
             </div>
           )}
@@ -738,18 +880,32 @@ export default function Home() {
       {/* My Builds Section */}
       {session && myBuilds.length > 0 && (
         <div className="card-modern p-6 space-y-6">
-          <h3 className="text-xl font-semibold text-gray-100">My Saved Builds</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-semibold text-gray-100">My Saved Builds</h3>
+            <button
+              onClick={loadMyBuilds}
+              className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {myBuilds.map((build) => (
-              <div key={build.id} className="bg-gray-800/50 p-4 rounded-lg space-y-3">
+            {myBuilds.map((build, index) => (
+              <div key={build.id || index} className="bg-gray-800/50 p-4 rounded-lg space-y-3">
                 <div className="flex justify-between items-start">
                   <p className="text-xs text-gray-400">
                     {new Date(build.created_at).toLocaleDateString()}
                   </p>
                   <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
-                    {Array.isArray(build.mod_ids) ? build.mod_ids.length : 0} mods
+                    {Array.isArray(build.mod_ids) ? build.mod_ids.length : (build.mod_count || 0)} mods
                   </span>
                 </div>
+                
+                {/* Show car info if available (from localStorage builds) */}
+                {build.car_info && (
+                  <p className="text-xs text-blue-300 font-medium">{build.car_info}</p>
+                )}
+                
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-gray-400">HP</p>
@@ -760,11 +916,26 @@ export default function Home() {
                     <p className="font-semibold text-white">{build.result?.estimatedTq || '—'}</p>
                   </div>
                 </div>
+                
                 {build.result?.zeroToSixty && (
                   <div className="text-xs text-gray-400">
                     0-60: <span className="text-gray-300 font-medium">{build.result.zeroToSixty.toFixed(2)}s</span>
                   </div>
                 )}
+                
+                {build.result?.powerToWeight && (
+                  <div className="text-xs text-gray-400">
+                    P/W: <span className="text-gray-300 font-medium">{build.result.powerToWeight.toFixed(3)} hp/lb</span>
+                  </div>
+                )}
+                
+                {/* Delete button */}
+                <button
+                  onClick={() => deleteBuild(build.id || index)}
+                  className="w-full text-xs text-red-400 hover:text-red-300 py-1 transition-colors"
+                >
+                  Delete Build
+                </button>
               </div>
             ))}
           </div>
