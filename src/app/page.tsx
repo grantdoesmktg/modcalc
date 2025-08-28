@@ -82,7 +82,7 @@ export default function Home() {
 
   const [cars, setCars] = useState<Car[]>([]);
   const [mods, setMods] = useState<Mod[]>([]);
-  const [carId, setCarId] = useState<string | null>(null);
+  const [carId, setCarId] = useState<string>('');
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PredictResult | null>(null);
@@ -202,6 +202,30 @@ export default function Home() {
       alert('Saved!');
       loadMyBuilds();
     }
+  };
+
+  // Handle dropdown change
+  const handleCarChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setCarId(value);
+    // Clear results when car changes
+    setResult(null);
+    setError(null);
+  };
+
+  // Handle mod selection toggle
+  const toggleMod = (modId: string) => {
+    setSelected(prev => {
+      const newSelected = prev.includes(modId) 
+        ? prev.filter(id => id !== modId)
+        : [...prev, modId];
+      
+      // Clear results when mods change
+      setResult(null);
+      setError(null);
+      
+      return newSelected;
+    });
   };
 
   // ------------------ usage status component ------------------
@@ -417,13 +441,13 @@ export default function Home() {
 
           <select
             className="select-modern w-full"
-            value={carId ?? ''}
-            onChange={(e) => setCarId(e.target.value)}
+            value={carId}
+            onChange={handleCarChange}
           >
             <option value="">Select your car...</option>
             {cars.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.year} {c.make} {c.model} {c.trim ?? ''}
+                {c.year} {c.make} {c.model} {c.trim ? ` ${c.trim}` : ''}
               </option>
             ))}
           </select>
@@ -465,21 +489,22 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+          <div className="scrollable-mods space-y-4 pr-2">
             {Object.entries(modsByCategory).map(([category, categoryMods]) => (
               <div key={category} className="space-y-2">
-                <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
-                  {category}
+                <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider sticky top-0 bg-card py-2">
+                  {category.replace(/_/g, ' ')}
                 </h3>
                 <div className="space-y-2">
                   {categoryMods.map((mod) => (
-                    <label key={mod.id} className="flex items-start gap-3 p-3 bg-gray-800/30 rounded-lg hover:bg-gray-800/50 cursor-pointer transition-colors duration-200">
+                    <label 
+                      key={mod.id} 
+                      className="flex items-start gap-3 p-3 bg-gray-800/30 rounded-lg hover:bg-gray-800/50 cursor-pointer transition-colors duration-200"
+                    >
                       <input
                         type="checkbox"
                         checked={selected.includes(mod.id)}
-                        onChange={() => setSelected((prev) => (
-                          prev.includes(mod.id) ? prev.filter((x) => x !== mod.id) : [...prev, mod.id]
-                        ))}
+                        onChange={() => toggleMod(mod.id)}
                         className="checkbox-modern mt-0.5"
                       />
                       <div className="flex-1 min-w-0">
@@ -630,10 +655,11 @@ export default function Home() {
               {/* Save Button */}
               <button
                 onClick={onSave}
-                className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition-colors duration-200"
+                disabled={!session}
+                className="w-full flex items-center justify-center gap-2 py-2 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 text-gray-300 rounded-lg text-sm transition-colors duration-200"
               >
                 <SaveIcon />
-                Save This Build
+                {session ? 'Save This Build' : 'Sign in to Save'}
               </button>
             </div>
           )}
