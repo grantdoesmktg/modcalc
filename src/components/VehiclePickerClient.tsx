@@ -11,5 +11,6 @@ type Props = {
 };
 
 export default function VehiclePickerClient({ onChange }: Props) {
+  console.log('VehiclePickerClient received onChange:', !!onChange); // Debug log
   return <VehicleSelector onChange={onChange} />;
 }
