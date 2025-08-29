@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient, type Session } from '@supabase/supabase-js';
 import VehiclePickerClient from '../components/VehiclePickerClient';
+import { getCarSpecs, type CarSpecs } from '../lib/carDataLookup';
+import SpecSubmissionForm from '../components/SpecSubmissionForm';
 
 // --- Supabase browser client (uses your public env vars)
 const supabase = createClient(
@@ -10,19 +12,19 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// --- Types that match our tables
+// --- Types that match our tables (updated column names)
 type Car = {
   id: string;
   make: string; 
   model: string; 
   year: number; 
-  trim: string | null;
-  curb_weight_lbs?: number; 
-  stock_hp?: number; 
-  stock_tq?: number;
+  trim_label: string | null; // Updated column name
+  curb_weight_lb?: number | null; // Updated column name
+  stock_hp_bhp?: number | null; // Updated column name
+  stock_tq_lbft?: number | null; // Updated column name
   drivetrain?: 'FWD' | 'RWD' | 'AWD';
-  zero_to_sixty_s?: number | null; 
-  quarter_mile_s?: number | null;
+  zero_to_sixty_s_stock?: number | null; // Updated column name
+  quarter_mile_s_stock?: number | null; // Updated column name
 };
 
 type Mod = {
@@ -101,7 +103,34 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
 
   const [myBuilds, setMyBuilds] = useState<any[]>([]);
-  const car = useMemo(() => cars.find((c) => c.id === carId) || null, [cars, carId]);
+
+  // New community specs states
+  const [carSpecs, setCarSpecs] = useState<CarSpecs | null>(null);
+  const [showSubmissionForm, setShowSubmissionForm] = useState(false);
+  const [selectedVehicle, setSelectedVehicle] = useState<{
+    year: number;
+    make: string;
+    model: string;
+    trim_label: string;
+  } | null>(null);
+
+  const car = useMemo(() => {
+    const foundCar = cars.find((c) => c.id === carId) || null;
+    
+    // Merge car data with community specs if available
+    if (foundCar && carSpecs) {
+      return {
+        ...foundCar,
+        stock_hp_bhp: carSpecs.stock_hp_bhp ?? foundCar.stock_hp_bhp,
+        stock_tq_lbft: carSpecs.stock_tq_lbft ?? foundCar.stock_tq_lbft,
+        curb_weight_lb: carSpecs.curb_weight_lb ?? foundCar.curb_weight_lb,
+        zero_to_sixty_s_stock: carSpecs.zero_to_sixty_s_stock ?? foundCar.zero_to_sixty_s_stock,
+        quarter_mile_s_stock: carSpecs.quarter_mile_s_stock ?? foundCar.quarter_mile_s_stock,
+      };
+    }
+    
+    return foundCar;
+  }, [cars, carId, carSpecs]);
 
   // Calculate usage info
   const planLimit = USAGE_LIMITS[userPlan];
@@ -133,6 +162,69 @@ export default function Home() {
     }
   };
 
+  // ------------------ Load car specs with community fallback ------------------
+  const loadCarSpecs = async (year: number, make: string, model: string, trim_label: string) => {
+    try {
+      const specs = await getCarSpecs(year, make, model, trim_label);
+      setCarSpecs(specs);
+      setSelectedVehicle({ year, make, model, trim_label });
+    } catch (error) {
+      console.error('Error loading car specs:', error);
+      setCarSpecs({ source: 'missing' });
+    }
+  };
+
+  // ------------------ Handle car selection from dropdown ------------------
+  const handleCarChange = async (vehicleSelection: {
+    year?: number;
+    make?: string;
+    model?: string;
+    trim_label?: string;
+  }) => {
+    // Clear previous results
+    setResult(null);
+    setError(null);
+    setCarSpecs(null);
+    setSelectedVehicle(null);
+    setShowSubmissionForm(false);
+
+    // Check if we have a complete vehicle selection
+    if (!vehicleSelection.year || !vehicleSelection.make || !vehicleSelection.model || !vehicleSelection.trim_label) {
+      setCarId('');
+      return;
+    }
+
+    const { year, make, model, trim_label } = vehicleSelection;
+
+    try {
+      // Look up the car in the car_trims table to get the car ID
+      const { data: carData, error: carError } = await supabase
+        .from('car_trims')
+        .select('*')
+        .eq('year', year)
+        .eq('make', make)
+        .eq('model', model)
+        .eq('trim_label', trim_label)
+        .single();
+
+      if (carError || !carData) {
+        console.log('Car not found in database');
+        setCarId('');
+        return;
+      }
+
+      // Set the car ID for the main app logic
+      setCarId(carData.id);
+
+      // Load the car specifications (with community fallback)
+      await loadCarSpecs(year, make, model, trim_label);
+
+    } catch (error) {
+      console.error('Error handling car change:', error);
+      setCarId('');
+    }
+  };
+
   // ------------------ helper: delete build ------------------
   const deleteBuild = async (buildId: string | number) => {
     if (!session) return;
@@ -159,6 +251,7 @@ export default function Home() {
       alert(`Failed to delete build: ${error.message}`);
     }
   };
+
   async function loadMyBuilds() {
     if (!session) {
       setMyBuilds([]);
@@ -265,7 +358,7 @@ export default function Home() {
         user_id: session.user.id,
         user_email: session.user.email,
         car_id: car.id,
-        car_info: `${car.year} ${car.make} ${car.model} ${car.trim || ''}`.trim(),
+        car_info: `${car.year} ${car.make} ${car.model} ${car.trim_label || ''}`.trim(),
         mod_ids: selected,
         mod_count: selected.length,
         result: result,
@@ -297,16 +390,6 @@ export default function Home() {
     } finally {
       setSaving(false);
     }
-  };
-
-  // Handle dropdown change
-  const handleCarChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    console.log('Car selected:', value); // Debug log
-    setCarId(value);
-    // Clear results when car changes
-    setResult(null);
-    setError(null);
   };
 
   // Handle mod selection toggle
@@ -373,9 +456,19 @@ export default function Home() {
                 {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining on your {userPlan} plan today.
               </p>
             </div>
-            <button className="btn-primary px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105">
-              Upgrade Plan
-            </button>
+            <div className="flex gap-3">
+              {!session && (
+                <button 
+                  onClick={() => document.getElementById('email-input')?.focus()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105"
+                >
+                  Sign In
+                </button>
+              )}
+              <button className="btn-primary px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-105">
+                Upgrade Plan
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-xs text-yellow-400">
@@ -383,70 +476,44 @@ export default function Home() {
               <span>{usageCount} / {planLimit}</span>
             </div>
             <div className="progress-bar h-2">
-              <div className="progress-fill" style={{ width: `${usagePercentage}%` }}></div>
+              <div 
+                className="h-full bg-yellow-600 rounded-full transition-all duration-300" 
+                style={{ width: `${usagePercentage}%` }}
+              ></div>
             </div>
           </div>
         </div>
       );
     }
 
-    return (
-      <div className="card-modern p-4 border-blue-500/30">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-            <span className="text-sm font-medium text-gray-300">
-              {userPlan} Plan: {usageRemaining} prediction{usageRemaining !== 1 ? 's' : ''} remaining
-            </span>
-          </div>
-          {!session && (
-            <span className="text-xs text-gray-500">Sign in for more features</span>
-          )}
-        </div>
-        <div className="space-y-2">
-          <div className="progress-bar h-1.5">
-            <div className="progress-fill" style={{ width: `${usagePercentage}%` }}></div>
-          </div>
-          <div className="text-xs text-gray-400">{usageCount} / {planLimit} used today</div>
-        </div>
-      </div>
-    );
+    return null;
   };
 
-  // ------------------ boot: fetch data + auth ------------------
+  // ------------------ data loading ------------------
   useEffect(() => {
     (async () => {
       try {
-        console.log('Fetching data from Supabase...'); // Debug log
-        
-        const { data: carsData, error: carsError } = await supabase
-          .from('cars')
+        // Get session first
+        const { data: { session: s } } = await supabase.auth.getSession();
+        setSession(s);
+
+        // Load cars from car_trims table
+        const { data: carsData } = await supabase
+          .from('car_trims')
           .select('*')
-          .order('make', { ascending: true });
-          
-        const { data: modsData, error: modsError } = await supabase
-          .from('mods') 
+          .order('year', { ascending: false });
+
+        if (carsData) setCars(carsData as Car[]);
+
+        // Load mods
+        const { data: modsData } = await supabase
+          .from('mods')
           .select('*')
-          .order('category', { ascending: true });
-
-        if (carsError) {
-          console.error('Error fetching cars:', carsError);
-        } else {
-          console.log('Cars fetched:', carsData); // Debug log
-          setCars(carsData || []);
-        }
-
-        if (modsError) {
-          console.error('Error fetching mods:', modsError);
-        } else {
-          console.log('Mods fetched:', modsData); // Debug log
-          setMods(modsData || []);
-        }
-
-        // Auth setup
-        const { data: authData } = await supabase.auth.getSession();
-        setSession(authData.session ?? null);
+          .order('category, name');
         
+        if (modsData) setMods(modsData as Mod[]);
+
+        // Listen for auth changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, s) => {
           setSession(s);
         });
@@ -553,6 +620,24 @@ export default function Home() {
         </div>
       )}
 
+      {/* Community Submission Form */}
+      {showSubmissionForm && selectedVehicle && (
+        <SpecSubmissionForm
+          year={selectedVehicle.year}
+          make={selectedVehicle.make}
+          model={selectedVehicle.model}
+          trim_label={selectedVehicle.trim_label}
+          onSubmitted={() => {
+            setShowSubmissionForm(false);
+            // Reload specs after submission
+            if (selectedVehicle) {
+              loadCarSpecs(selectedVehicle.year, selectedVehicle.make, selectedVehicle.model, selectedVehicle.trim_label);
+            }
+          }}
+          onCancel={() => setShowSubmissionForm(false)}
+        />
+      )}
+
       {/* Main Interface */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Step 1: Choose Car */}
@@ -568,30 +653,42 @@ export default function Home() {
           </div>
 
           <div className="relative">
-  {/* Supabase-backed vehicle picker */}
-  <VehiclePickerClient />
-</div>
+            <VehiclePickerClient onChange={handleCarChange} />
+          </div>
 
           {car && (
             <div className="space-y-4 p-4 bg-gray-800/50 rounded-lg">
-              <h3 className="font-semibold text-gray-200">Stock Specifications</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-200">Stock Specifications</h3>
+                {carSpecs && (
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    carSpecs.source === 'official' ? 'bg-green-600/20 text-green-400' :
+                    carSpecs.source === 'community' ? 'bg-blue-600/20 text-blue-400' :
+                    'bg-gray-600/20 text-gray-400'
+                  }`}>
+                    {carSpecs.source === 'official' ? 'Official' : 
+                     carSpecs.source === 'community' ? 'Community' : 'Missing'}
+                  </span>
+                )}
+              </div>
+              
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1">
                   <p className="text-gray-400">Power</p>
                   <p className="font-semibold text-gray-200">
-                    {car.stock_hp ? `${car.stock_hp} HP` : 'N/A'}
+                    {car.stock_hp_bhp ? `${car.stock_hp_bhp} HP` : 'N/A'}
                   </p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-gray-400">Torque</p>
                   <p className="font-semibold text-gray-200">
-                    {car.stock_tq ? `${car.stock_tq} lb-ft` : 'N/A'}
+                    {car.stock_tq_lbft ? `${car.stock_tq_lbft} lb-ft` : 'N/A'}
                   </p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-gray-400">Weight</p>
                   <p className="font-semibold text-gray-200">
-                    {car.curb_weight_lbs ? `${car.curb_weight_lbs.toLocaleString()} lbs` : 'N/A'}
+                    {car.curb_weight_lb ? `${car.curb_weight_lb.toLocaleString()} lbs` : 'N/A'}
                   </p>
                 </div>
                 <div className="space-y-1">
@@ -601,6 +698,21 @@ export default function Home() {
                   </p>
                 </div>
               </div>
+
+              {/* Missing Data Notice */}
+              {carSpecs?.source === 'missing' || (!car.stock_hp_bhp || !car.stock_tq_lbft || !car.curb_weight_lb) && (
+                <div className="bg-yellow-900/30 border border-yellow-500/50 p-3 rounded-lg">
+                  <p className="text-yellow-300 text-sm flex items-center justify-between">
+                    ⚠️ Some specifications are missing for this vehicle.
+                    <button
+                      onClick={() => setShowSubmissionForm(true)}
+                      className="text-blue-400 hover:text-blue-300 underline text-xs"
+                    >
+                      Submit Data
+                    </button>
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -716,14 +828,14 @@ export default function Home() {
                   <p className="text-xs text-blue-300 uppercase tracking-wider mb-1">Horsepower</p>
                   <p className="text-2xl font-bold text-white">{result.estimatedHp}</p>
                   <p className="text-xs text-blue-300">
-                    +{result.estimatedHp - (car?.stock_hp || 0)} HP
+                    +{result.estimatedHp - (car?.stock_hp_bhp || 0)} HP
                   </p>
                 </div>
                 <div className="bg-gradient-to-r from-purple-900/30 to-purple-800/30 p-4 rounded-lg">
                   <p className="text-xs text-purple-300 uppercase tracking-wider mb-1">Torque</p>
                   <p className="text-2xl font-bold text-white">{result.estimatedTq}</p>
                   <p className="text-xs text-purple-300">
-                    +{result.estimatedTq - (car?.stock_tq || 0)} lb-ft
+                    +{result.estimatedTq - (car?.stock_tq_lbft || 0)} lb-ft
                   </p>
                 </div>
                 <div className="bg-gradient-to-r from-green-900/30 to-green-800/30 p-4 rounded-lg">
@@ -741,20 +853,18 @@ export default function Home() {
               {/* Performance Times */}
               {(result.zeroToSixty !== null || result.quarterMile !== null) && (
                 <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
-                    Acceleration Times
-                  </h3>
+                  <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Performance Times</h4>
                   <div className="grid grid-cols-2 gap-4">
-                    {result.zeroToSixty !== null && (
-                      <div className="bg-gray-800/50 p-4 rounded-lg text-center">
-                        <p className="text-xs text-gray-400 mb-1">0-60 mph</p>
-                        <p className="text-xl font-bold text-white">{result.zeroToSixty.toFixed(2)}s</p>
+                    {result.zeroToSixty && (
+                      <div className="bg-gradient-to-r from-red-900/30 to-red-800/30 p-4 rounded-lg">
+                        <p className="text-xs text-red-300 uppercase tracking-wider mb-1">0-60 mph</p>
+                        <p className="text-2xl font-bold text-white">{result.zeroToSixty.toFixed(1)}s</p>
                       </div>
                     )}
-                    {result.quarterMile !== null && (
-                      <div className="bg-gray-800/50 p-4 rounded-lg text-center">
-                        <p className="text-xs text-gray-400 mb-1">Quarter Mile</p>
-                        <p className="text-xl font-bold text-white">{result.quarterMile.toFixed(2)}s</p>
+                    {result.quarterMile && (
+                      <div className="bg-gradient-to-r from-indigo-900/30 to-indigo-800/30 p-4 rounded-lg">
+                        <p className="text-xs text-indigo-300 uppercase tracking-wider mb-1">1/4 Mile</p>
+                        <p className="text-2xl font-bold text-white">{result.quarterMile.toFixed(2)}s</p>
                       </div>
                     )}
                   </div>
@@ -762,34 +872,32 @@ export default function Home() {
               )}
 
               {/* Notes */}
-              {result.notes?.length ? (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
-                    Tuning Notes
-                  </h3>
-                  <div className="bg-yellow-950/20 border border-yellow-500/30 rounded-lg p-4">
-                    <ul className="space-y-2 text-sm text-yellow-200">
-                      {result.notes.map((note, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <span className="text-yellow-400 mt-0.5">•</span>
-                          <span>{note}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+              {result.notes && result.notes.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-gray-300">Notes</h4>
+                  <ul className="space-y-1">
+                    {result.notes.map((note, i) => (
+                      <li key={i} className="text-xs text-gray-400 flex items-start gap-2">
+                        <span className="text-blue-400">•</span>
+                        {note}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              ) : null}
+              )}
+            </div>
+          )}
 
-              {/* Save Button */}
+          {/* Save Build Section */}
+          {result && (
+            <div className="pt-4 border-t border-gray-700">
               <button
                 onClick={onSave}
-                disabled={!session || saving || !result}
-                className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm transition-all duration-200 ${
-                  !session || !result
-                    ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                    : saving
-                      ? 'bg-blue-600 text-white cursor-wait'
-                      : 'bg-gray-700 hover:bg-gray-600 text-gray-300 hover:scale-[1.02]'
+                disabled={saving || !result}
+                className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                  saving
+                    ? 'bg-blue-600 text-white cursor-wait'
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300 hover:scale-[1.02]'
                 }`}
               >
                 {saving ? (
@@ -829,44 +937,44 @@ export default function Home() {
                     {new Date(build.created_at).toLocaleDateString()}
                   </p>
                   <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
-                    {Array.isArray(build.mod_ids) ? build.mod_ids.length : (build.mod_count || 0)} mods
+                    {Array.isArray(build.mod_ids) ? build.mod_ids.length : build.mod_count || 0} mods
                   </span>
                 </div>
                 
-                {/* Show car info if available (from localStorage builds) */}
-                {build.car_info && (
-                  <p className="text-xs text-blue-300 font-medium">{build.car_info}</p>
-                )}
-                
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-gray-400">HP</p>
-                    <p className="font-semibold text-white">{build.result?.estimatedHp || '—'}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400">TQ</p>
-                    <p className="font-semibold text-white">{build.result?.estimatedTq || '—'}</p>
-                  </div>
+                <div className="space-y-2">
+                  <p className="font-medium text-gray-200 text-sm">
+                    {build.car_info}
+                  </p>
+                  
+                  {build.result && (
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-gray-400">HP:</span>
+                        <span className="text-white ml-1">{build.result.estimatedHp}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">TQ:</span>
+                        <span className="text-white ml-1">{build.result.estimatedTq}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">P/W:</span>
+                        <span className="text-white ml-1">{build.result.powerToWeight?.toFixed(3)}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">0-60:</span>
+                        <span className="text-white ml-1">
+                          {build.result.zeroToSixty ? `${build.result.zeroToSixty.toFixed(1)}s` : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                
-                {build.result?.zeroToSixty && (
-                  <div className="text-xs text-gray-400">
-                    0-60: <span className="text-gray-300 font-medium">{build.result.zeroToSixty.toFixed(2)}s</span>
-                  </div>
-                )}
-                
-                {build.result?.powerToWeight && (
-                  <div className="text-xs text-gray-400">
-                    P/W: <span className="text-gray-300 font-medium">{build.result.powerToWeight.toFixed(3)} hp/lb</span>
-                  </div>
-                )}
-                
-                {/* Delete button */}
+
                 <button
                   onClick={() => deleteBuild(build.id || index)}
-                  className="w-full text-xs text-red-400 hover:text-red-300 py-1 transition-colors"
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors"
                 >
-                  Delete Build
+                  Delete
                 </button>
               </div>
             ))}
