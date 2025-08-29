@@ -31,14 +31,20 @@ export default function VehicleSelector({ onChange }: Props) {
   // Load years from car_trims table
   React.useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('car_trims')
         .select('year')
         .order('year', { ascending: false });
       
+      if (error) {
+        console.error('Error fetching years:', error);
+        return;
+      }
+      
       if (data) {
-        // Get unique years
-        const uniqueYears = [...new Set(data.map((r: any) => r.year))];
+        // Get unique years and sort them
+        const uniqueYears = [...new Set(data.map((r: any) => r.year))].sort((a, b) => b - a);
+        console.log('Found years:', uniqueYears); // Debug log
         setYears(uniqueYears.map(year => ({ label: String(year), value: year })));
       }
     })();
@@ -58,15 +64,21 @@ export default function VehicleSelector({ onChange }: Props) {
     }
 
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('car_trims')
         .select('make')
         .eq('year', year)
         .order('make');
       
+      if (error) {
+        console.error('Error fetching makes:', error);
+        return;
+      }
+      
       if (data) {
         // Get unique makes
-        const uniqueMakes = [...new Set(data.map((r: any) => r.make))];
+        const uniqueMakes = [...new Set(data.map((r: any) => r.make))].sort();
+        console.log('Found makes for', year, ':', uniqueMakes); // Debug log
         setMakes(uniqueMakes.map(make => ({ label: make, value: make })));
       }
     })();
@@ -84,16 +96,22 @@ export default function VehicleSelector({ onChange }: Props) {
     }
 
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('car_trims')
         .select('model')
         .eq('year', year)
         .eq('make', make)
         .order('model');
       
+      if (error) {
+        console.error('Error fetching models:', error);
+        return;
+      }
+      
       if (data) {
         // Get unique models
-        const uniqueModels = [...new Set(data.map((r: any) => r.model))];
+        const uniqueModels = [...new Set(data.map((r: any) => r.model))].sort();
+        console.log('Found models for', year, make, ':', uniqueModels); // Debug log
         setModels(uniqueModels.map(model => ({ label: model, value: model })));
       }
     })();
@@ -109,7 +127,7 @@ export default function VehicleSelector({ onChange }: Props) {
     }
 
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('car_trims')
         .select('trim_label')
         .eq('year', year)
@@ -117,9 +135,15 @@ export default function VehicleSelector({ onChange }: Props) {
         .eq('model', model)
         .order('trim_label');
       
+      if (error) {
+        console.error('Error fetching trims:', error);
+        return;
+      }
+      
       if (data) {
         // Get unique trim labels
-        const uniqueTrims = [...new Set(data.map((r: any) => r.trim_label))];
+        const uniqueTrims = [...new Set(data.map((r: any) => r.trim_label))].sort();
+        console.log('Found trims for', year, make, model, ':', uniqueTrims); // Debug log
         setTrims(uniqueTrims.map(trim => ({ label: trim, value: trim })));
       }
     })();
