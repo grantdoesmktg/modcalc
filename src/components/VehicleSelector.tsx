@@ -28,7 +28,7 @@ export default function VehicleSelector({ onChange }: Props) {
   const [model, setModel] = React.useState<string>();
   const [trim_label, setTrimLabel] = React.useState<string>();
 
-  // Load years from car_trims table
+  // Load years from car_years table (or car_trims as fallback)
   React.useEffect(() => {
     (async () => {
       console.log('Starting year fetch...');
@@ -36,12 +36,27 @@ export default function VehicleSelector({ onChange }: Props) {
       console.log('Supabase Key exists:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
       
       try {
-        const { data, error, count } = await supabase
-          .from('car_trims')
+        // First, try to fetch from car_years table
+        let { data, error, count } = await supabase
+          .from('car_years')
           .select('year', { count: 'exact' })
           .order('year', { ascending: false });
         
-        console.log('Query result:', { data, error, count });
+        console.log('car_years query result:', { data, error, count });
+        
+        // If car_years table doesn't exist or fails, fallback to car_trims
+        if (error && error.code === 'PGRST116') {
+          console.log('car_years table not found, falling back to car_trims...');
+          const fallbackResult = await supabase
+            .from('car_trims')
+            .select('year', { count: 'exact' })
+            .order('year', { ascending: false });
+          
+          data = fallbackResult.data;
+          error = fallbackResult.error;
+          count = fallbackResult.count;
+          console.log('car_trims query result:', { data, error, count });
+        }
         
         if (error) {
           console.error('Error fetching years:', error);
@@ -51,31 +66,39 @@ export default function VehicleSelector({ onChange }: Props) {
             details: error.details,
             hint: error.hint
           });
+          
+          // Use fallback years if both queries fail
+          console.log('Using fallback years due to query errors');
+          const fallbackYears = Array.from({ length: 25 }, (_, i) => 2024 - i); // 2024 down to 2000
+          setYears(fallbackYears.map(year => ({ label: String(year), value: year })));
           return;
         }
         
-        if (data) {
+        if (data && data.length > 0) {
           console.log('Raw year data:', data);
           // Get unique years and sort them
           const uniqueYears = [...new Set(data.map((r: any) => r.year))].sort((a, b) => b - a);
           console.log('Processed unique years:', uniqueYears);
           
-          if (uniqueYears.length > 0) {
+          if (uniqueYears.length > 0 && uniqueYears[0] !== null && uniqueYears[0] !== undefined) {
             setYears(uniqueYears.map(year => ({ label: String(year), value: year })));
           } else {
-            console.log('No unique years found, using fallback');
-            // Fallback years if database is empty
-            const fallbackYears = [2020, 2019, 2018, 2017, 2016, 2015];
+            console.log('No valid years found, using fallback');
+            // Extended fallback years
+            const fallbackYears = Array.from({ length: 25 }, (_, i) => 2024 - i); // 2024 down to 2000
             setYears(fallbackYears.map(year => ({ label: String(year), value: year })));
           }
         } else {
           console.log('No data returned from query, using fallback years');
-          // Fallback years if no data returned
-          const fallbackYears = [2020, 2019, 2018, 2017, 2016, 2015];
+          // Extended fallback years
+          const fallbackYears = Array.from({ length: 25 }, (_, i) => 2024 - i); // 2024 down to 2000
           setYears(fallbackYears.map(year => ({ label: String(year), value: year })));
         }
       } catch (err) {
         console.error('Unexpected error:', err);
+        // Use fallback years on any unexpected error
+        const fallbackYears = Array.from({ length: 25 }, (_, i) => 2024 - i); // 2024 down to 2000
+        setYears(fallbackYears.map(year => ({ label: String(year), value: year })));
       }
     })();
   }, []);
@@ -94,22 +117,29 @@ export default function VehicleSelector({ onChange }: Props) {
     }
 
     (async () => {
-      const { data, error } = await supabase
-        .from('car_trims')
-        .select('make')
-        .eq('year', year)
-        .order('make');
-      
-      if (error) {
-        console.error('Error fetching makes:', error);
-        return;
-      }
-      
-      if (data) {
-        // Get unique makes
-        const uniqueMakes = [...new Set(data.map((r: any) => r.make))].sort();
-        console.log('Found makes for', year, ':', uniqueMakes); // Debug log
-        setMakes(uniqueMakes.map(make => ({ label: make, value: make })));
+      try {
+        const { data, error } = await supabase
+          .from('car_trims')
+          .select('make')
+          .eq('year', year)
+          .order('make');
+        
+        if (error) {
+          console.error('Error fetching makes:', error);
+          return;
+        }
+        
+        if (data) {
+          // Get unique makes and filter out null/undefined values
+          const uniqueMakes = [...new Set(data.map((r: any) => r.make))]
+            .filter(make => make !== null && make !== undefined && make !== '')
+            .sort();
+          
+          console.log('Found makes for', year, ':', uniqueMakes);
+          setMakes(uniqueMakes.map(make => ({ label: make, value: make })));
+        }
+      } catch (err) {
+        console.error('Unexpected error fetching makes:', err);
       }
     })();
   }, [year]);
@@ -126,23 +156,30 @@ export default function VehicleSelector({ onChange }: Props) {
     }
 
     (async () => {
-      const { data, error } = await supabase
-        .from('car_trims')
-        .select('model')
-        .eq('year', year)
-        .eq('make', make)
-        .order('model');
-      
-      if (error) {
-        console.error('Error fetching models:', error);
-        return;
-      }
-      
-      if (data) {
-        // Get unique models
-        const uniqueModels = [...new Set(data.map((r: any) => r.model))].sort();
-        console.log('Found models for', year, make, ':', uniqueModels); // Debug log
-        setModels(uniqueModels.map(model => ({ label: model, value: model })));
+      try {
+        const { data, error } = await supabase
+          .from('car_trims')
+          .select('model')
+          .eq('year', year)
+          .eq('make', make)
+          .order('model');
+        
+        if (error) {
+          console.error('Error fetching models:', error);
+          return;
+        }
+        
+        if (data) {
+          // Get unique models and filter out null/undefined values
+          const uniqueModels = [...new Set(data.map((r: any) => r.model))]
+            .filter(model => model !== null && model !== undefined && model !== '')
+            .sort();
+          
+          console.log('Found models for', year, make, ':', uniqueModels);
+          setModels(uniqueModels.map(model => ({ label: model, value: model })));
+        }
+      } catch (err) {
+        console.error('Unexpected error fetching models:', err);
       }
     })();
   }, [year, make]);
@@ -157,100 +194,137 @@ export default function VehicleSelector({ onChange }: Props) {
     }
 
     (async () => {
-      const { data, error } = await supabase
-        .from('car_trims')
-        .select('trim_label')
-        .eq('year', year)
-        .eq('make', make)
-        .eq('model', model)
-        .order('trim_label');
-      
-      if (error) {
-        console.error('Error fetching trims:', error);
-        return;
-      }
-      
-      if (data) {
-        // Get unique trim labels
-        const uniqueTrims = [...new Set(data.map((r: any) => r.trim_label))].sort();
-        console.log('Found trims for', year, make, model, ':', uniqueTrims); // Debug log
-        setTrims(uniqueTrims.map(trim => ({ label: trim, value: trim })));
+      try {
+        const { data, error } = await supabase
+          .from('car_trims')
+          .select('trim_label')
+          .eq('year', year)
+          .eq('make', make)
+          .eq('model', model)
+          .order('trim_label');
+        
+        if (error) {
+          console.error('Error fetching trims:', error);
+          return;
+        }
+        
+        if (data) {
+          // Get unique trim labels and filter out null/undefined values
+          const uniqueTrims = [...new Set(data.map((r: any) => r.trim_label))]
+            .filter(trim => trim !== null && trim !== undefined && trim !== '')
+            .sort();
+          
+          console.log('Found trims for', year, make, model, ':', uniqueTrims);
+          setTrims(uniqueTrims.map(trim => ({ label: trim, value: trim })));
+        }
+      } catch (err) {
+        console.error('Unexpected error fetching trims:', err);
       }
     })();
   }, [year, make, model]);
 
   // Call onChange when selection is complete
   React.useEffect(() => {
-    onChange?.({ year, make, model, trim_label });
+    onChange?.({
+      year,
+      make,
+      model,
+      trim_label
+    });
   }, [year, make, model, trim_label, onChange]);
 
   return (
-    <div className="flex flex-col gap-3">
-      <Select 
-        label="Year" 
-        value={year} 
-        onChange={(v) => setYear(v ? Number(v) : undefined)} 
-        options={years}
-      />
-      
-      <Select 
-        label="Make" 
-        value={make} 
-        onChange={(v) => setMake(v || undefined)} 
-        options={makes} 
-        disabled={!year}
-      />
-      
-      <Select 
-        label="Model" 
-        value={model} 
-        onChange={(v) => setModel(v || undefined)} 
-        options={models} 
-        disabled={!year || !make}
-      />
-      
-      <Select 
-        label="Trim" 
-        value={trim_label} 
-        onChange={(v) => setTrimLabel(v || undefined)} 
-        options={trims} 
-        disabled={!year || !make || !model}
-      />
-    </div>
-  );
-}
+    <div className="space-y-4">
+      {/* Year Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">
+          Select year
+        </label>
+        <select 
+          value={year || ''} 
+          onChange={(e) => setYear(e.target.value ? Number(e.target.value) : undefined)}
+          className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Select year</option>
+          {years.map(yearOption => (
+            <option key={yearOption.value} value={yearOption.value}>
+              {yearOption.label}
+            </option>
+          ))}
+        </select>
+        {years.length === 0 && (
+          <p className="text-xs text-gray-400 mt-1">Loading years...</p>
+        )}
+      </div>
 
-function Select({ 
-  label, 
-  value, 
-  onChange, 
-  options, 
-  disabled 
-}: {
-  label: string;
-  value?: string | number;
-  onChange: (v: string | null) => void;
-  options: Option[];
-  disabled?: boolean;
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-sm text-gray-300 font-medium">{label}</span>
-      <select 
-        className="select-modern"
-        disabled={disabled} 
-        value={value ?? ''} 
-        onChange={(e) => onChange(e.target.value || null)}
-      >
-        <option value="">
-          {disabled ? `Select ${label.toLowerCase()} above first` : `Select ${label.toLowerCase()}`}
-        </option>
-        {options.map(o => (
-          <option key={`${label}-${o.value}`} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
+      {/* Make Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">
+          Make
+        </label>
+        <select 
+          value={make || ''} 
+          onChange={(e) => setMake(e.target.value || undefined)}
+          disabled={!year}
+          className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <option value="">Select make</option>
+          {makes.map(makeOption => (
+            <option key={makeOption.value} value={makeOption.value}>
+              {makeOption.label}
+            </option>
+          ))}
+        </select>
+        {year && makes.length === 0 && (
+          <p className="text-xs text-gray-400 mt-1">Loading makes...</p>
+        )}
+      </div>
+
+      {/* Model Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">
+          Model
+        </label>
+        <select 
+          value={model || ''} 
+          onChange={(e) => setModel(e.target.value || undefined)}
+          disabled={!make}
+          className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <option value="">Select model</option>
+          {models.map(modelOption => (
+            <option key={modelOption.value} value={modelOption.value}>
+              {modelOption.label}
+            </option>
+          ))}
+        </select>
+        {make && models.length === 0 && (
+          <p className="text-xs text-gray-400 mt-1">Loading models...</p>
+        )}
+      </div>
+
+      {/* Trim Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">
+          Trim
+        </label>
+        <select 
+          value={trim_label || ''} 
+          onChange={(e) => setTrimLabel(e.target.value || undefined)}
+          disabled={!model}
+          className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <option value="">Select trim</option>
+          {trims.map(trimOption => (
+            <option key={trimOption.value} value={trimOption.value}>
+              {trimOption.label}
+            </option>
+          ))}
+        </select>
+        {model && trims.length === 0 && (
+          <p className="text-xs text-gray-400 mt-1">Loading trims...</p>
+        )}
+      </div>
+    </div>
   );
 }
