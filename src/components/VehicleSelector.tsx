@@ -31,21 +31,51 @@ export default function VehicleSelector({ onChange }: Props) {
   // Load years from car_trims table
   React.useEffect(() => {
     (async () => {
-      const { data, error } = await supabase
-        .from('car_trims')
-        .select('year')
-        .order('year', { ascending: false });
+      console.log('Starting year fetch...');
+      console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+      console.log('Supabase Key exists:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
       
-      if (error) {
-        console.error('Error fetching years:', error);
-        return;
-      }
-      
-      if (data) {
-        // Get unique years and sort them
-        const uniqueYears = [...new Set(data.map((r: any) => r.year))].sort((a, b) => b - a);
-        console.log('Found years:', uniqueYears); // Debug log
-        setYears(uniqueYears.map(year => ({ label: String(year), value: year })));
+      try {
+        const { data, error, count } = await supabase
+          .from('car_trims')
+          .select('year', { count: 'exact' })
+          .order('year', { ascending: false });
+        
+        console.log('Query result:', { data, error, count });
+        
+        if (error) {
+          console.error('Error fetching years:', error);
+          console.error('Error details:', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          });
+          return;
+        }
+        
+        if (data) {
+          console.log('Raw year data:', data);
+          // Get unique years and sort them
+          const uniqueYears = [...new Set(data.map((r: any) => r.year))].sort((a, b) => b - a);
+          console.log('Processed unique years:', uniqueYears);
+          
+          if (uniqueYears.length > 0) {
+            setYears(uniqueYears.map(year => ({ label: String(year), value: year })));
+          } else {
+            console.log('No unique years found, using fallback');
+            // Fallback years if database is empty
+            const fallbackYears = [2020, 2019, 2018, 2017, 2016, 2015];
+            setYears(fallbackYears.map(year => ({ label: String(year), value: year })));
+          }
+        } else {
+          console.log('No data returned from query, using fallback years');
+          // Fallback years if no data returned
+          const fallbackYears = [2020, 2019, 2018, 2017, 2016, 2015];
+          setYears(fallbackYears.map(year => ({ label: String(year), value: year })));
+        }
+      } catch (err) {
+        console.error('Unexpected error:', err);
       }
     })();
   }, []);
