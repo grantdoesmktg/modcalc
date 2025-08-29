@@ -175,55 +175,120 @@ export default function Home() {
   };
 
   // ------------------ Handle car selection from dropdown ------------------
-  const handleCarChange = async (vehicleSelection: {
-    year?: number;
-    make?: string;
-    model?: string;
-    trim_label?: string;
-  }) => {
-    // Clear previous results
-    setResult(null);
-    setError(null);
-    setCarSpecs(null);
-    setSelectedVehicle(null);
-    setShowSubmissionForm(false);
+ // Add this debugging code to your handleCarChange function in page.tsx
 
-    // Check if we have a complete vehicle selection
-    if (!vehicleSelection.year || !vehicleSelection.make || !vehicleSelection.model || !vehicleSelection.trim_label) {
+const handleCarChange = async (vehicleSelection: {
+  year?: number;
+  make?: string;
+  model?: string;
+  trim_label?: string;
+}) => {
+  // Clear previous results
+  setResult(null);
+  setError(null);
+  setCarSpecs(null);
+  setSelectedVehicle(null);
+  setShowSubmissionForm(false);
+
+  // Check if we have a complete vehicle selection
+  if (!vehicleSelection.year || !vehicleSelection.make || !vehicleSelection.model || !vehicleSelection.trim_label) {
+    setCarId('');
+    return;
+  }
+
+  const { year, make, model, trim_label } = vehicleSelection;
+
+  // DEBUG: Log the vehicle selection
+  console.log('Vehicle selected:', { year, make, model, trim_label });
+
+  try {
+    // Look up the car in the car_trims table to get the car ID
+    const { data: carData, error: carError } = await supabase
+      .from('car_trims')
+      .select('*')
+      .eq('year', year)
+      .eq('make', make)
+      .eq('model', model)
+      .eq('trim_label', trim_label)
+      .single();
+
+    if (carError || !carData) {
+      console.log('Car not found in database');
       setCarId('');
       return;
     }
 
-    const { year, make, model, trim_label } = vehicleSelection;
+    // Set the car ID for the main app logic
+    setCarId(carData.id);
 
-    try {
-      // Look up the car in the car_trims table to get the car ID
-      const { data: carData, error: carError } = await supabase
-        .from('car_trims')
-        .select('*')
-        .eq('year', year)
-        .eq('make', make)
-        .eq('model', model)
-        .eq('trim_label', trim_label)
-        .single();
+    // Load the car specifications (with community fallback)
+    await loadCarSpecs(year, make, model, trim_label);
 
-      if (carError || !carData) {
-        console.log('Car not found in database');
-        setCarId('');
-        return;
-      }
+  } catch (error) {
+    console.error('Error handling car change:', error);
+    setCarId('');
+  }
+};
 
-      // Set the car ID for the main app logic
-      setCarId(carData.id);
+// Also add this debugging to your loadCarSpecs function:
 
-      // Load the car specifications (with community fallback)
-      await loadCarSpecs(year, make, model, trim_label);
+const loadCarSpecs = async (year: number, make: string, model: string, trim_label: string) => {
+  try {
+    const specs = await getCarSpecs(year, make, model, trim_label);
+    setCarSpecs(specs);
+    
+    // Set the selected vehicle for the submission form
+    const vehicleData = { year, make, model, trim_label };
+    setSelectedVehicle(vehicleData);
+    
+    // DEBUG: Log the selected vehicle and specs
+    console.log('Selected vehicle set:', vehicleData);
+    console.log('Car specs loaded:', specs);
+    console.log('Should show submit form when clicked:', !!vehicleData);
+    
+  } catch (error) {
+    console.error('Error loading car specs:', error);
+    setCarSpecs({ source: 'missing' });
+  }
+};
 
-    } catch (error) {
-      console.error('Error handling car change:', error);
-      setCarId('');
-    }
-  };
+// And update your Submit Data button with debugging:
+
+{/* Missing Data Notice */}
+{(carSpecs?.source === 'missing' || (!car?.stock_hp_bhp || !car?.stock_tq_lbft || !car?.curb_weight_lb)) && (
+  <div className="bg-yellow-900/30 border border-yellow-500/50 p-3 rounded-lg">
+    <p className="text-yellow-300 text-sm flex items-center justify-between">
+      ⚠️ Some specifications are missing for this vehicle.
+      <button
+        onClick={() => {
+          console.log('Submit Data clicked!');
+          console.log('selectedVehicle:', selectedVehicle);
+          console.log('showSubmissionForm before:', showSubmissionForm);
+          setShowSubmissionForm(true);
+          console.log('showSubmissionForm set to true');
+        }}
+        className="text-blue-400 hover:text-blue-300 underline text-xs"
+      >
+        Submit Data
+      </button>
+    </p>
+  </div>
+)}
+
+// Add this debug component right after your Community Submission Form:
+
+{/* DEBUG: Show current state */}
+{process.env.NODE_ENV === 'development' && (
+  <div className="card-modern p-4 bg-gray-900/50 border-yellow-500/30">
+    <h4 className="text-yellow-400 font-semibold mb-2">🐛 DEBUG INFO</h4>
+    <div className="text-xs text-gray-300 space-y-1">
+      <p><strong>showSubmissionForm:</strong> {String(showSubmissionForm)}</p>
+      <p><strong>selectedVehicle:</strong> {selectedVehicle ? JSON.stringify(selectedVehicle) : 'null'}</p>
+      <p><strong>carSpecs:</strong> {carSpecs ? JSON.stringify(carSpecs.source) : 'null'}</p>
+      <p><strong>Should show form:</strong> {String(showSubmissionForm && selectedVehicle)}</p>
+    </div>
+  </div>
+)}
 
   // ------------------ helper: delete build ------------------
   const deleteBuild = async (buildId: string | number) => {
