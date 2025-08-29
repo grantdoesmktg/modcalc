@@ -1,105 +1,108 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { basePredict } from '@/lib/predict';
-import { aiFallback } from '@/lib/ai';
+import { basePredict } from '../../../lib/predict';
 
+// Create supabase client for server-side operations
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const bodySchema = z.object({
+// Request validation schema
+const PredictRequest = z.object({
   carId: z.string(),
-  modIds: z.array(z.string()).default([])
+  modIds: z.array(z.string())
 });
 
-export async function POST(req: NextRequest) {
-  // --- validate body
-  const json = await req.json();
-  const parsed = bodySchema.safeParse(json);
-  if (!parsed.success) {
-    return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
-  }
+// Simple AI fallback function (placeholder)
+async function aiFallback(car: any, mods: any[]): Promise<any> {
+  // For now, just return empty object
+  // In the future, this could integrate with an AI service
+  return {
+    notes: ['AI estimation not available - using base calculations only.']
+  };
+}
 
-  // --- identify user (if signed in)
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth?.user?.id ?? null;
-
-  // --- limits (tune later)
-  const FREE_DAILY = 3;
-  const PLUS_DAILY = 30;
-  const PRO_DAILY = 200;
-
-  // --- plan detection (wire to Stripe later)
-  // Optionally set NEXT_PUBLIC_DEFAULT_PLAN in Vercel (FREE|PLUS|PRO).
-  const limits = { FREE: FREE_DAILY, PLUS: PLUS_DAILY, PRO: PRO_DAILY } as const;
-  const envPlan = process.env.NEXT_PUBLIC_DEFAULT_PLAN as keyof typeof limits | undefined;
-  const plan: keyof typeof limits = envPlan ?? 'FREE';
-  const planLimit = limits[plan];
-
-  // --- helper: count today's usage for a user
-  async function getTodayCount(uid: string) {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const { count } = await supabase
-      .from('usage_events')
-      .select('*', { count: 'exact', head: true })
-      .gte('occurred_at', start.toISOString())
-      .eq('user_id', uid);
-    return count || 0;
-  }
-
-  // --- enforce server-side limit for signed-in users
-  if (userId) {
-    const used = await getTodayCount(userId);
-    if (used >= planLimit) {
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const parsed = PredictRequest.safeParse(body);
+    
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: `Daily limit reached for ${plan} plan.` },
-        { status: 429 }
+        { error: 'Invalid request data' }, 
+        { status: 400 }
       );
     }
-  }
-  // (Anonymous users are already rate-limited in the client via localStorage.)
 
-  // --- fetch data
-  const { carId, modIds } = parsed.data;
-  const { data: car, error: carErr } = await supabase
-    .from('cars')
-    .select('*')
-    .eq('id', carId)
-    .single();
-  if (carErr || !car) {
-    return NextResponse.json({ error: 'Car not found' }, { status: 404 });
-  }
-
-  const { data: mods } = await supabase
-    .from('mods')
-    .select('*')
-    .in('id', modIds);
-
-  // --- compute
-  let result = basePredict(car as any, (mods || []) as any[]);
-  const needsAI =
-    (mods || []).some((m) => m.needs_tune) || (mods || []).length === 0;
-
-  if (needsAI) {
-    try {
-      const ai = await aiFallback(car, mods || []);
-      result = {
-        ...result,
-        ...ai,
-        notes: [...(result.notes || []), ...(ai.notes || [])]
-      };
-    } catch {
-      // ignore AI failures; return base result
+    // Get user ID if authenticated
+    const authHeader = request.headers.get('authorization');
+    let userId: string | null = null;
+    
+    if (authHeader) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+        userId = user?.id || null;
+      } catch (error) {
+        // Ignore auth errors for now
+      }
     }
-  }
 
-  // --- record usage AFTER a successful prediction (signed-in users only)
-  if (userId) {
-    await supabase.from('usage_events').insert({ user_id: userId });
-  }
+    // Fetch car data from car_trims table (updated table name)
+    const { carId, modIds } = parsed.data;
+    const { data: car, error: carErr } = await supabase
+      .from('car_trims') // Updated table name
+      .select('*')
+      .eq('id', carId)
+      .single();
+      
+    if (carErr || !car) {
+      return NextResponse.json({ error: 'Car not found' }, { status: 404 });
+    }
 
-  return NextResponse.json(result);
+    // Fetch mods data
+    const { data: mods } = await supabase
+      .from('mods')
+      .select('*')
+      .in('id', modIds);
+
+    // Calculate base prediction
+    let result = basePredict(car, (mods || []) as any[]);
+    
+    // Check if we need AI enhancement
+    const needsAI = (mods || []).some((m) => m.needs_tune) || (mods || []).length === 0;
+
+    if (needsAI) {
+      try {
+        const ai = await aiFallback(car, mods || []);
+        result = {
+          ...result,
+          ...ai,
+          notes: [...(result.notes || []), ...(ai.notes || [])]
+        };
+      } catch {
+        // Ignore AI failures; return base result
+      }
+    }
+
+    // Record usage for authenticated users
+    if (userId) {
+      try {
+        await supabase.from('usage_events').insert({ user_id: userId });
+      } catch (error) {
+        // Ignore usage tracking errors
+        console.error('Failed to record usage:', error);
+      }
+    }
+
+    return NextResponse.json(result);
+    
+  } catch (error: any) {
+    console.error('Prediction error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' }, 
+      { status: 500 }
+    );
+  }
 }
