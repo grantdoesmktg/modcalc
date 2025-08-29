@@ -418,4 +418,65 @@ button:focus {
 @keyframes move {
   0% { background-position: 0 0; }
   100% { background-position: 50px 50px; }
+ 
+  /* Additional styles for dropdown selectors */
+.select-modern {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+}
+
+.select-modern:disabled {
+  background-color: var(--muted);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Scrollable modifications section */
+.scrollable-mods {
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--muted);
+}
+
+.scrollable-mods::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollable-mods::-webkit-scrollbar-track {
+  background: var(--muted);
+  border-radius: 3px;
+}
+
+.scrollable-mods::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.scrollable-mods::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Loading pulse animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.pulse {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Glow effect for primary button */
+.glow-primary:hover {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+/* Progress bar */
+.progress-bar {
+  background: var(--muted);
+  border-radius: 10px;
+  overflow: hidden;
 }
