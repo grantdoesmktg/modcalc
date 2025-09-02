@@ -29,20 +29,28 @@ export async function getCarSpecs(year: number, make: string, model: string, tri
     return { ...officialData, source: 'official' };
   }
 
-  // Step 2: Check community_specs table (approved submissions)
-  const { data: communityData } = await supabase
-    .from('community_specs')
-    .select('stock_hp_bhp, stock_tq_lbft, curb_weight_lb, zero_to_sixty_s_stock, quarter_mile_s_stock')
-    .eq('year', year)
-    .eq('make', make)
-    .eq('model', model)
-    .eq('trim_label', trim_label)
-    .eq('status', 'approved')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+// Step 2: Check community_specs table (approved submissions)
+const { data: communityData, error: communityError } = await supabase
+.from('community_specs')
+.select('stock_hp_bhp, stock_tq_lbft, curb_weight_lb, zero_to_sixty_s_stock, quarter_mile_s_stock')
+.eq('year', year)
+.eq('make', make)
+.eq('model', model)
+.eq('trim_label', trim_label)
+.eq('status', 'approved')
+.order('created_at', { ascending: false })
+.limit(1)
+.single();
 
-  if (communityData) {
+// If community_specs query fails, skip community data
+if (communityError) {
+console.log('Community specs query failed:', communityError.message);
+// Continue with just official data
+return { ...officialData, source: 'missing' };
+}
+
+if (communityData) {
+
     // Merge official data with community data (official takes priority for each field)
     return {
       stock_hp_bhp: officialData?.stock_hp_bhp ?? communityData.stock_hp_bhp,
