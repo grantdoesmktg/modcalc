@@ -40,7 +40,7 @@ const { data: communityData, error: communityError } = await supabase
 .eq('status', 'approved')
 .order('created_at', { ascending: false })
 .limit(1)
-.single();
+.maybeSingle();
 
 // If community_specs query fails, skip community data
 if (communityError) {
