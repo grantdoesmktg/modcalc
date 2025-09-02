@@ -230,30 +230,6 @@ const handleCarChange = async (vehicleSelection: {
   }
 };
 
-// Also add this debugging to your loadCarSpecs function:
-
-const loadCarSpecs = async (year: number, make: string, model: string, trim_label: string) => {
-  try {
-    const specs = await getCarSpecs(year, make, model, trim_label);
-    setCarSpecs(specs);
-    
-    // Set the selected vehicle for the submission form
-    const vehicleData = { year, make, model, trim_label };
-    setSelectedVehicle(vehicleData);
-    
-    // DEBUG: Log the selected vehicle and specs
-    console.log('Selected vehicle set:', vehicleData);
-    console.log('Car specs loaded:', specs);
-    console.log('Should show submit form when clicked:', !!vehicleData);
-    
-  } catch (error) {
-    console.error('Error loading car specs:', error);
-    setCarSpecs({ source: 'missing' });
-  }
-};
-
-// And update your Submit Data button with debugging:
-
 {/* Missing Data Notice */}
 {(carSpecs?.source === 'missing' || (!car?.stock_hp_bhp || !car?.stock_tq_lbft || !car?.curb_weight_lb)) && (
   <div className="bg-yellow-900/30 border border-yellow-500/50 p-3 rounded-lg">
@@ -275,20 +251,6 @@ const loadCarSpecs = async (year: number, make: string, model: string, trim_labe
   </div>
 )}
 
-// Add this debug component right after your Community Submission Form:
-
-{/* DEBUG: Show current state */}
-{process.env.NODE_ENV === 'development' && (
-  <div className="card-modern p-4 bg-gray-900/50 border-yellow-500/30">
-    <h4 className="text-yellow-400 font-semibold mb-2">🐛 DEBUG INFO</h4>
-    <div className="text-xs text-gray-300 space-y-1">
-      <p><strong>showSubmissionForm:</strong> {String(showSubmissionForm)}</p>
-      <p><strong>selectedVehicle:</strong> {selectedVehicle ? JSON.stringify(selectedVehicle) : 'null'}</p>
-      <p><strong>carSpecs:</strong> {carSpecs ? JSON.stringify(carSpecs.source) : 'null'}</p>
-      <p><strong>Should show form:</strong> {String(showSubmissionForm && selectedVehicle)}</p>
-    </div>
-  </div>
-)}
 
   // ------------------ helper: delete build ------------------
   const deleteBuild = async (buildId: string | number) => {

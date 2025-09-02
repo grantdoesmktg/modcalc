@@ -1,0 +1,30 @@
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -267,21 +267,6 @@ const handleCarChange = async (vehicleSelection: {
+   }
+ };
+ 
+-// Also add this debugging to your loadCarSpecs function:
+-
+-const loadCarSpecs = async (year: number, make: string, model: string, trim_label: string) => {
+-  try {
+-    const specs = await getCarSpecs(year, make, model, trim_label);
+-    setCarSpecs(specs);
+-    
+-    // Set the selected vehicle for the submission form
+-    const vehicleData = { year, make, model, trim_label };
+-    setSelectedVehicle(vehicleData);
+-    
+-    // DEBUG: Log the selected vehicle and specs
+-    console.log('Selected vehicle set:', vehicleData);
+-    console.log('Car specs loaded:', specs);
+-    console.log('Should show submit form when clicked:', !!vehicleData);
+-    
+-  } catch (error) {
+-    console.error('Error loading car specs:', error);
+-    setCarSpecs({ source: 'missing' });
+-  }
+-};
+-
+-// And update your Submit Data button with debugging:
++  // And update your Submit Data button with debugging:
