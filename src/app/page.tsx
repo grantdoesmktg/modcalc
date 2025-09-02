@@ -107,6 +107,7 @@ export default function Home() {
   // New community specs states
   const [carSpecs, setCarSpecs] = useState<CarSpecs | null>(null);
   const [showSubmissionForm, setShowSubmissionForm] = useState(false);
+  const [loadingSpecs, setLoadingSpecs] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<{
     year: number;
     make: string;
