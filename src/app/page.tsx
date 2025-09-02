@@ -230,27 +230,6 @@ const handleCarChange = async (vehicleSelection: {
   }
 };
 
-{/* Missing Data Notice */}
-{(carSpecs?.source === 'missing' || (!car?.stock_hp_bhp || !car?.stock_tq_lbft || !car?.curb_weight_lb)) && (
-  <div className="bg-yellow-900/30 border border-yellow-500/50 p-3 rounded-lg">
-    <p className="text-yellow-300 text-sm flex items-center justify-between">
-      ⚠️ Some specifications are missing for this vehicle.
-      <button
-        onClick={() => {
-          console.log('Submit Data clicked!');
-          console.log('selectedVehicle:', selectedVehicle);
-          console.log('showSubmissionForm before:', showSubmissionForm);
-          setShowSubmissionForm(true);
-          console.log('showSubmissionForm set to true');
-        }}
-        className="text-blue-400 hover:text-blue-300 underline text-xs"
-      >
-        Submit Data
-      </button>
-    </p>
-  </div>
-)}
-
 
   // ------------------ helper: delete build ------------------
   const deleteBuild = async (buildId: string | number) => {
