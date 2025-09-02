@@ -164,6 +164,13 @@ export default function Home() {
 
   // ------------------ Load car specs with community fallback ------------------
   const loadCarSpecs = async (year: number, make: string, model: string, trim_label: string) => {
+    // Prevent multiple simultaneous calls
+    if (loadingSpecs) {
+      console.log('Already loading specs, skipping...');
+      return;
+    }
+    
+    setLoadingSpecs(true);
     try {
       const specs = await getCarSpecs(year, make, model, trim_label);
       setCarSpecs(specs);
@@ -172,6 +179,8 @@ export default function Home() {
       console.error('Error loading car specs:', error);
       setCarSpecs({ source: 'missing' });
       setSelectedVehicle({ year, make, model, trim_label });
+    } finally {
+      setLoadingSpecs(false);
     }
   };
 
