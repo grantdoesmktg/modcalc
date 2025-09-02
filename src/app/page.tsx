@@ -171,6 +171,7 @@ export default function Home() {
     } catch (error) {
       console.error('Error loading car specs:', error);
       setCarSpecs({ source: 'missing' });
+      setSelectedVehicle({ year, make, model, trim_label });
     }
   };
 
